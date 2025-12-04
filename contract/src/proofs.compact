@@ -1,0 +1,104 @@
+// PCI Zero-Knowledge Proof Circuits
+// Written in Midnight's Compact language
+//
+// These circuits enable proving facts about personal data
+// without revealing the underlying data.
+
+// ============================================================
+// Age Verification
+// ============================================================
+// Proves that a person is over a certain age without
+// revealing their exact birth date.
+
+export circuit proveAgeOver(
+  @secret birthYear: Field,
+  @secret birthMonth: Field,
+  @secret birthDay: Field,
+  @public minAge: Field,
+  @public currentYear: Field,
+  @public currentMonth: Field,
+  @public currentDay: Field
+) -> Bool {
+  // Calculate age in years (simplified)
+  let age = currentYear - birthYear;
+
+  // Adjust for birthday not yet passed this year
+  let birthdayPassed = (currentMonth > birthMonth) ||
+                       (currentMonth == birthMonth && currentDay >= birthDay);
+
+  let adjustedAge = if birthdayPassed { age } else { age - 1 };
+
+  return adjustedAge >= minAge;
+}
+
+// ============================================================
+// Credential Verification
+// ============================================================
+// Proves possession of a valid credential without revealing
+// the credential details.
+
+export circuit hasValidCredential(
+  @secret credentialHash: Field,
+  @secret credentialExpiry: Field,
+  @secret issuerSignature: Field,
+  @public issuerPublicKey: Field,
+  @public credentialType: Field,
+  @public currentTimestamp: Field
+) -> Bool {
+  // Verify credential hasn't expired
+  let notExpired = credentialExpiry > currentTimestamp;
+
+  // TODO: Verify issuer signature
+  // let validSignature = verify(issuerSignature, credentialHash, issuerPublicKey);
+  let validSignature = true; // Placeholder
+
+  return notExpired && validSignature;
+}
+
+// ============================================================
+// Range Proof
+// ============================================================
+// Proves a value is within a range without revealing the value.
+
+export circuit valueInRange(
+  @secret value: Field,
+  @public minValue: Field,
+  @public maxValue: Field
+) -> Bool {
+  return value >= minValue && value <= maxValue;
+}
+
+// ============================================================
+// Set Membership
+// ============================================================
+// Proves membership in a set without revealing which element.
+
+export circuit isMemberOf(
+  @secret element: Field,
+  @secret merkleProof: [Field; 32],
+  @public merkleRoot: Field
+) -> Bool {
+  // TODO: Implement Merkle proof verification
+  // let computedRoot = computeMerkleRoot(element, merkleProof);
+  // return computedRoot == merkleRoot;
+  return true; // Placeholder
+}
+
+// ============================================================
+// Location Proof
+// ============================================================
+// Proves presence in a geographic region without exact location.
+
+export circuit inRegion(
+  @secret latitude: Field,
+  @secret longitude: Field,
+  @public regionMinLat: Field,
+  @public regionMaxLat: Field,
+  @public regionMinLon: Field,
+  @public regionMaxLon: Field
+) -> Bool {
+  let inLatRange = latitude >= regionMinLat && latitude <= regionMaxLat;
+  let inLonRange = longitude >= regionMinLon && longitude <= regionMaxLon;
+
+  return inLatRange && inLonRange;
+}

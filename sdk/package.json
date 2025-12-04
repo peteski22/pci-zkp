@@ -1,0 +1,47 @@
+{
+  "name": "pci-zkp-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for PCI zero-knowledge proofs",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/midnight-js-contracts": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/peteski22/pci-zkp.git"
+  },
+  "keywords": [
+    "pci",
+    "zkp",
+    "zero-knowledge",
+    "midnight",
+    "privacy"
+  ]
+}

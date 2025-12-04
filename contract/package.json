@@ -1,0 +1,13 @@
+{
+  "name": "pci-zkp-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Compact contracts for PCI zero-knowledge proofs",
+  "type": "module",
+  "scripts": {
+    "build": "echo 'TODO: Add Compact compiler when available'",
+    "clean": "rm -rf build"
+  },
+  "devDependencies": {},
+  "license": "Apache-2.0"
+}

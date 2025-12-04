@@ -1,0 +1,14 @@
+services:
+  zkp:
+    build: .
+    ports:
+      - "8084:8084"
+    environment:
+      - PORT=8084
+      - MIDNIGHT_NETWORK=testnet
+
+  # Midnight proof server (when available)
+  # proof-server:
+  #   image: ghcr.io/midnight-ntwrk/proof-server:latest
+  #   profiles:
+  #     - with-prover
