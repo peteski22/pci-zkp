@@ -1,14 +1,61 @@
+# Midnight Network - Local Development Stack
+# Run: docker compose up -d
+#
+# This starts a local Midnight network for ZK proof generation and verification.
+# Based on: https://github.com/bricktowers/midnight-rwa
+
 services:
+  # Midnight blockchain node
+  node:
+    image: midnightnetwork/midnight-node:0.12.0
+    ports:
+      - "9944:9944"
+    environment:
+      CFG_PRESET: dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # Proof server - generates ZK proofs locally
+  proof-server:
+    image: midnightnetwork/proof-server:latest
+    ports:
+      - "6300:6300"
+    command: ["midnight-proof-server", "--network", "undeployed"]
+    environment:
+      RUST_BACKTRACE: full
+
+  # Indexer - queries blockchain state
+  indexer:
+    image: midnightntwrk/indexer-standalone:2.1.2
+    ports:
+      - "8088:8088"
+    environment:
+      APP__INFRA__SECRET: "303132333435363738393031323334353637383930313233343536373839303132"
+      APP__INFRA__NODE__URL: "ws://node:9944"
+      RUST_LOG: "indexer=debug,chain_indexer=debug,indexer_api=debug"
+    depends_on:
+      node:
+        condition: service_healthy
+
+  # PCI ZKP Service - our TypeScript SDK wrapper
   zkp:
     build: .
     ports:
       - "8084:8084"
     environment:
-      - PORT=8084
-      - MIDNIGHT_NETWORK=testnet
+      PORT: 8084
+      MIDNIGHT_NODE_URL: "ws://node:9944"
+      MIDNIGHT_PROOF_SERVER_URL: "http://proof-server:6300"
+      MIDNIGHT_INDEXER_URL: "http://indexer:8088"
+    depends_on:
+      - node
+      - proof-server
+      - indexer
 
-  # Midnight proof server (when available)
-  # proof-server:
-  #   image: ghcr.io/midnight-ntwrk/proof-server:latest
-  #   profiles:
-  #     - with-prover
+networks:
+  default:
+    name: pci-midnight

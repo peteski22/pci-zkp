@@ -4,10 +4,21 @@
   "private": true,
   "description": "Compact contracts for PCI zero-knowledge proofs",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "echo 'TODO: Add Compact compiler when available'",
-    "clean": "rm -rf build"
+    "compact": "compact compile src/proofs.compact --output managed",
+    "build": "pnpm run compact && tsc && cp -r managed dist/",
+    "clean": "rm -rf dist managed",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test/circuit.test.ts"
   },
-  "devDependencies": {},
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.9.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  },
   "license": "Apache-2.0"
 }

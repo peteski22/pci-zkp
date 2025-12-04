@@ -1,7 +1,7 @@
 {
   "name": "pci-zkp-sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for PCI zero-knowledge proofs",
+  "description": "TypeScript SDK for PCI zero-knowledge proofs using Midnight",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -19,10 +19,21 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "lint": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "compact": "compactc src/contracts/age-verification.compact --output dist/contracts"
   },
   "dependencies": {
-    "@midnight-ntwrk/midnight-js-contracts": "^2.1.0"
+    "@midnight-ntwrk/compact-runtime": "0.9.0",
+    "@midnight-ntwrk/ledger": "4.0.0",
+    "@midnight-ntwrk/midnight-js-contracts": "2.0.2",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "2.0.2",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "2.0.2",
+    "@midnight-ntwrk/midnight-js-types": "2.0.2",
+    "@midnight-ntwrk/midnight-js-utils": "2.0.2",
+    "@midnight-ntwrk/wallet": "5.0.0",
+    "@midnight-ntwrk/wallet-api": "5.0.0",
+    "fp-ts": "2.16.1",
+    "rxjs": "7.8.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -35,13 +46,14 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/peteski22/pci-zkp.git"
+    "url": "https://github.com/pci-project/pci-zkp.git"
   },
   "keywords": [
     "pci",
     "zkp",
     "zero-knowledge",
     "midnight",
-    "privacy"
+    "privacy",
+    "age-verification"
   ]
 }

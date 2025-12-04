@@ -1,104 +1,78 @@
 // PCI Zero-Knowledge Proof Circuits
 // Written in Midnight's Compact language
 //
-// These circuits enable proving facts about personal data
-// without revealing the underlying data.
+// Age verification without revealing birth date
+//
+// SPDX-License-Identifier: Apache-2.0
 
-// ============================================================
-// Age Verification
-// ============================================================
-// Proves that a person is over a certain age without
-// revealing their exact birth date.
+pragma language_version >= 0.16 && <= 0.26;
 
-export circuit proveAgeOver(
-  @secret birthYear: Field,
-  @secret birthMonth: Field,
-  @secret birthDay: Field,
-  @public minAge: Field,
-  @public currentYear: Field,
-  @public currentMonth: Field,
-  @public currentDay: Field
-) -> Bool {
-  // Calculate age in years (simplified)
-  let age = currentYear - birthYear;
+import CompactStandardLibrary;
 
-  // Adjust for birthday not yet passed this year
-  let birthdayPassed = (currentMonth > birthMonth) ||
-                       (currentMonth == birthMonth && currentDay >= birthDay);
+// On-chain state
+export ledger verified: Boolean;
+export ledger lastMinAge: Uint<8>;
+export ledger verificationCount: Counter;
 
-  let adjustedAge = if birthdayPassed { age } else { age - 1 };
-
-  return adjustedAge >= minAge;
+constructor() {
+  verified = false;
+  lastMinAge = 0;
+  verificationCount.increment(0);
 }
 
-// ============================================================
-// Credential Verification
-// ============================================================
-// Proves possession of a valid credential without revealing
-// the credential details.
+// Witness functions - user provides these privately
+witness birthYear(): Uint<16>;
+witness birthMonth(): Uint<8>;
+witness birthDay(): Uint<8>;
 
-export circuit hasValidCredential(
-  @secret credentialHash: Field,
-  @secret credentialExpiry: Field,
-  @secret issuerSignature: Field,
-  @public issuerPublicKey: Field,
-  @public credentialType: Field,
-  @public currentTimestamp: Field
-) -> Bool {
-  // Verify credential hasn't expired
-  let notExpired = credentialExpiry > currentTimestamp;
+// Main age verification circuit
+// Proves: age >= minAge
+// Reveals: minAge threshold, verified boolean
+// Hides: exact birth date
+export circuit verifyAge(
+  minAge: Uint<8>,
+  currentYear: Uint<16>,
+  currentMonth: Uint<8>,
+  currentDay: Uint<8>
+): [] {
+  // Get secret birth date from user
+  const bYear = birthYear();
+  const bMonth = birthMonth();
+  const bDay = birthDay();
 
-  // TODO: Verify issuer signature
-  // let validSignature = verify(issuerSignature, credentialHash, issuerPublicKey);
-  let validSignature = true; // Placeholder
+  // Calculate base age
+  const baseAge = currentYear - bYear;
 
-  return notExpired && validSignature;
+  // Check if birthday has passed this year
+  const monthPassed = currentMonth > bMonth;
+  const sameMonthDayPassed = (currentMonth == bMonth) && (currentDay >= bDay);
+  const birthdayPassed = monthPassed || sameMonthDayPassed;
+
+  // Conservative age calculation
+  const adjustedAge = baseAge - 1;
+
+  // User is verified if their minimum possible age meets requirement
+  const isOldEnough = adjustedAge >= (minAge as Uint<16>);
+
+  // Also verified if birthday passed and base age meets requirement
+  const definitelyOldEnough = birthdayPassed && (baseAge >= (minAge as Uint<16>));
+
+  // Verified if either condition is met
+  const result = isOldEnough || definitelyOldEnough;
+
+  // Explicitly disclose only the yes/no result and the threshold
+  // This is safe - we're only revealing "yes you're over X" not the actual age
+  verified = disclose(result);
+  lastMinAge = disclose(minAge);
+  verificationCount.increment(1);
 }
 
-// ============================================================
-// Range Proof
-// ============================================================
-// Proves a value is within a range without revealing the value.
-
-export circuit valueInRange(
-  @secret value: Field,
-  @public minValue: Field,
-  @public maxValue: Field
-) -> Bool {
-  return value >= minValue && value <= maxValue;
+// Query the last verification result
+export circuit getVerified(): Boolean {
+  return verified;
 }
 
-// ============================================================
-// Set Membership
-// ============================================================
-// Proves membership in a set without revealing which element.
-
-export circuit isMemberOf(
-  @secret element: Field,
-  @secret merkleProof: [Field; 32],
-  @public merkleRoot: Field
-) -> Bool {
-  // TODO: Implement Merkle proof verification
-  // let computedRoot = computeMerkleRoot(element, merkleProof);
-  // return computedRoot == merkleRoot;
-  return true; // Placeholder
-}
-
-// ============================================================
-// Location Proof
-// ============================================================
-// Proves presence in a geographic region without exact location.
-
-export circuit inRegion(
-  @secret latitude: Field,
-  @secret longitude: Field,
-  @public regionMinLat: Field,
-  @public regionMaxLat: Field,
-  @public regionMinLon: Field,
-  @public regionMaxLon: Field
-) -> Bool {
-  let inLatRange = latitude >= regionMinLat && latitude <= regionMaxLat;
-  let inLonRange = longitude >= regionMinLon && longitude <= regionMaxLon;
-
-  return inLatRange && inLonRange;
+// Get total verification count
+export circuit getVerificationCount(): Field {
+  return verificationCount as Field;
 }
