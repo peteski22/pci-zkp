@@ -16,14 +16,34 @@ export class AgeVerification {
    * Proves: age >= minAge
    * Reveals: minAge threshold, whether verified
    * Hides: exact birth date
+   *
+   * Accepts either typed input or raw API input with birthDate as string
    */
-  async generate(input: AgeProofInput): Promise<Proof> {
-    const currentDate = input.currentDate ?? new Date();
+  async generate(input: AgeProofInput | { birthDate?: string; minAge?: number }): Promise<Proof> {
+    // Parse input - handle both Date objects and ISO strings
+    const birthDate = input.birthDate instanceof Date
+      ? input.birthDate
+      : input.birthDate
+        ? new Date(input.birthDate)
+        : null;
+
+    if (!birthDate || isNaN(birthDate.getTime())) {
+      return {
+        proof: "",
+        publicSignals: { verified: false, error: "Invalid or missing birth date" },
+        verificationKey: "",
+        circuitId: "age_verification",
+        timestamp: new Date(),
+      };
+    }
+
+    const minAge = input.minAge ?? 18;
+    const currentDate = new Date();
 
     // Calculate age (this is done privately in the circuit)
-    const birthYear = input.birthDate.getFullYear();
-    const birthMonth = input.birthDate.getMonth();
-    const birthDay = input.birthDate.getDate();
+    const birthYear = birthDate.getFullYear();
+    const birthMonth = birthDate.getMonth();
+    const birthDay = birthDate.getDate();
 
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth();
@@ -37,7 +57,7 @@ export class AgeVerification {
       age--;
     }
 
-    const verified = age >= input.minAge;
+    const verified = age >= minAge;
 
     // TODO: Integrate with Midnight SDK for actual ZKP generation
     // For now, return a placeholder proof structure
@@ -45,7 +65,7 @@ export class AgeVerification {
       proof: this.generatePlaceholderProof(),
       publicSignals: {
         verified,
-        minAge: input.minAge,
+        minAge,
       } satisfies AgeProofOutput,
       verificationKey: "age_verification_vk_placeholder",
       circuitId: "age_verification",
