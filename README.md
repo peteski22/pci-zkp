@@ -78,9 +78,41 @@ export circuit proveAgeOver(
 
 ## Development
 
+### Prerequisites
+
+1. **Node.js 18+** and **pnpm**
+2. **Docker** and **Docker Compose** (for local Midnight network)
+3. **Compact Compiler** (Midnight's contract language)
+
+### Install Compact Compiler
+
+```bash
+# Via npm (requires Node 18+)
+pnpm add -D @aspect-build/compactc
+
+# Or download from Midnight's releases for your platform
+```
+
+### Run Local Midnight Network
+
+```bash
+# Start the Midnight development network
+docker compose up -d
+
+# This starts:
+# - Midnight node (localhost:9944)
+# - Proof server (localhost:6300)
+# - Indexer (localhost:8088)
+```
+
+### Build and Test
+
 ```bash
 # Install dependencies
 pnpm install
+
+# Compile Compact contract to TypeScript
+pnpm --filter pci-zkp-contract compact
 
 # Build all packages
 pnpm build
@@ -93,6 +125,19 @@ pnpm --filter pci-zkp-contract build
 
 # Build SDK only
 pnpm --filter pci-zkp-sdk build
+```
+
+### Verify Midnight Network is Running
+
+```bash
+# Check node
+curl http://localhost:9944/health
+
+# Check proof server
+curl http://localhost:6300/health
+
+# Check indexer
+curl http://localhost:8088/api/v1/graphql
 ```
 
 ## Related Packages
