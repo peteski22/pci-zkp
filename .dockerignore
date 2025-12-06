@@ -1,0 +1,12 @@
+node_modules
+sdk/node_modules
+contract/node_modules
+dist
+sdk/dist
+*.log
+.git
+.gitignore
+*.md
+tests
+coverage
+.env*

@@ -1,61 +1,45 @@
 /**
  * PCI ZKP Service HTTP Server
  *
- * Generic HTTP server that dynamically loads proof handlers from ./proofs/
- * To add a new proof type, just add a file to the proofs directory.
+ * HTTP server that exposes proof generation endpoints.
+ * Proof handlers are registered via the barrel file in ./proofs/index.ts
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import type { ProofConfig } from "./types.js";
+import * as proofModules from "./proofs/index.js";
 
 const PORT = parseInt(process.env.PORT || "8084", 10);
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface ProofHandler {
-  generate: (input: unknown) => Promise<unknown>;
+  generate(input: unknown): Promise<unknown>;
 }
 
-// Dynamically loaded proof handlers
+// Proof handlers registry
 const proofHandlers: Record<string, ProofHandler> = {};
 
 /**
- * Load all proof handlers from the proofs directory
+ * Load all proof handlers from the barrel export
  */
-async function loadProofHandlers(): Promise<void> {
-  const proofsDir = join(__dirname, "proofs");
-  const files = readdirSync(proofsDir).filter(
-    (f) => f.endsWith(".ts") || f.endsWith(".js")
-  );
+function loadProofHandlers(): void {
+  const config: ProofConfig = { proverEndpoint: process.env.PROOF_SERVER_URL };
 
-  for (const file of files) {
-    // Skip non-handler files
-    if (file === "generator.ts" || file === "index.ts") continue;
+  for (const [name, HandlerClass] of Object.entries(proofModules)) {
+    if (typeof HandlerClass !== "function") continue;
 
-    const proofType = file.replace(/\.(ts|js)$/, "").replace(/-/g, "_");
+    const handler = new HandlerClass(config) as ProofHandler;
 
-    try {
-      const module = await import(`./proofs/${file.replace(".ts", ".js")}`);
+    // Register with lowercase name (e.g., "ageverification")
+    const lowerName = name.toLowerCase();
+    proofHandlers[lowerName] = handler;
 
-      // Find the exported class (assumes PascalCase class name)
-      const className = Object.keys(module).find(
-        (k) => typeof module[k] === "function" && k !== "default"
-      );
-
-      if (className && module[className]) {
-        const HandlerClass = module[className];
-        proofHandlers[proofType.replace(/_/g, "")] = new HandlerClass({
-          proofServerUrl: process.env.PROOF_SERVER_URL,
-        });
-        // Also register with the original name pattern
-        const shortName = file.replace(/\.(ts|js)$/, "").split("-")[0];
-        proofHandlers[shortName] = proofHandlers[proofType.replace(/_/g, "")];
-        console.log(`[ZKP] Loaded proof handler: ${shortName}`);
-      }
-    } catch (err) {
-      console.error(`[ZKP] Failed to load handler ${file}:`, err);
+    // Also register short name (e.g., "age" from "AgeVerification")
+    const shortName = name.replace(/Verification|Proof$/i, "").toLowerCase();
+    if (shortName !== lowerName) {
+      proofHandlers[shortName] = handler;
     }
+
+    console.log(`[ZKP] Loaded proof handler: ${shortName}`);
   }
 }
 
@@ -137,18 +121,18 @@ async function handleRequest(
   sendJson(res, { error: "Not found" }, 404);
 }
 
-// Start server after loading handlers
-loadProofHandlers().then(() => {
-  const server = createServer((req, res) => {
-    handleRequest(req, res).catch((err) => {
-      console.error("Request error:", err);
-      sendJson(res, { error: "Internal server error" }, 500);
-    });
-  });
+// Load handlers and start server
+loadProofHandlers();
 
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`PCI ZKP Service starting on port ${PORT}`);
-    console.log(`Loaded proof types: ${[...new Set(Object.keys(proofHandlers))].join(", ")}`);
-    console.log(`Health check: http://localhost:${PORT}/health`);
+const server = createServer((req, res) => {
+  handleRequest(req, res).catch((err) => {
+    console.error("Request error:", err);
+    sendJson(res, { error: "Internal server error" }, 500);
   });
+});
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`PCI ZKP Service starting on port ${PORT}`);
+  console.log(`Loaded proof types: ${[...new Set(Object.keys(proofHandlers))].join(", ")}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
 });
