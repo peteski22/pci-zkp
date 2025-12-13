@@ -32,6 +32,8 @@ export interface AgeProofInput {
   minAge: number;
   /** Current date (defaults to now) */
   currentDate?: Date;
+  /** Requester's ephemeral DID (proof bound to this identity) */
+  requesterDid?: string;
 }
 
 export interface AgeProofOutput {
@@ -39,6 +41,8 @@ export interface AgeProofOutput {
   verified: boolean;
   /** The minimum age that was proven */
   minAge: number;
+  /** The DID the proof is bound to (if provided) */
+  requesterDid?: string;
 }
 
 // Credential Proof
