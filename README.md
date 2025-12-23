@@ -146,6 +146,7 @@ curl http://localhost:8088/api/v1/graphql
 - [pci-context-store](https://github.com/peteski22/pci-context-store) - Layer 1: Context Store
 - [pci-agent](https://github.com/peteski22/pci-agent) - Layer 2: Personal Agent
 - [pci-contracts](https://github.com/peteski22/pci-contracts) - Layer 3: Smart Contracts
+- [pci-identity](https://github.com/peteski22/pci-identity) - Layer 5: Identity (DIDs)
 
 ## License
 
