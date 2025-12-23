@@ -1,5 +1,5 @@
 {
-  "name": "pci-zkp-sdk",
+  "name": "@peteski22/pci-zkp-sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for PCI zero-knowledge proofs using Midnight",
   "type": "module",
@@ -46,7 +46,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pci-project/pci-zkp.git"
+    "url": "https://github.com/peteski22/pci-zkp.git"
   },
   "keywords": [
     "pci",

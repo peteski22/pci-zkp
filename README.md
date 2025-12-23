@@ -29,7 +29,7 @@ pci-zkp/
 ## Installation
 
 ```bash
-pnpm add pci-zkp-sdk
+pnpm add @peteski22/pci-zkp-sdk
 ```
 
 ## Quick Start

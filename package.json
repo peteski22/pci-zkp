@@ -1,5 +1,5 @@
 {
-  "name": "pci-zkp",
+  "name": "@peteski22/pci-zkp",
   "version": "0.1.0",
   "private": true,
   "description": "Layer 4: Zero-knowledge proofs via Midnight for PCI",
