@@ -20,7 +20,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/peteski22/pci-zkp.git"
+    "url": "git+https://github.com/peteski22/pci-zkp.git"
   },
   "keywords": [
     "pci",
