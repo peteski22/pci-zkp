@@ -80,64 +80,65 @@ export circuit proveAgeOver(
 
 ### Prerequisites
 
-1. **Node.js 18+** and **pnpm**
+1. **Node.js 20+** and **pnpm**
 2. **Docker** and **Docker Compose** (for local Midnight network)
 3. **Compact Compiler** (Midnight's contract language)
 
 ### Install Compact Compiler
 
 ```bash
-# Via npm (requires Node 18+)
-pnpm add -D @aspect-build/compactc
+# Install the compact version manager
+curl -fsSL https://docs.midnight.network/install | bash
 
-# Or download from Midnight's releases for your platform
+# Install a specific version (must match pragma in .compact files)
+compact update 0.26.0
+
+# Verify installation
+~/.compact/versions/0.26.0/x86_64-unknown-linux-musl/compactc.bin --version
 ```
 
-### Run Local Midnight Network
+The Makefile expects `compactc.bin` to be in `~/.compact/versions/0.26.0/x86_64-unknown-linux-musl/`.
+
+### Makefile Commands
 
 ```bash
-# Start the Midnight development network
-docker compose up -d
-
-# This starts:
-# - Midnight node (localhost:9944)
-# - Proof server (localhost:6300)
-# - Indexer (localhost:8088)
+make help       # Show all available commands
+make dev        # Start local Midnight network
+make down       # Stop network and clean volumes
+make status     # Check network health
+make compile    # Compile Compact contracts
+make build      # Build all packages
+make test       # Run unit tests
+make test-int   # Run integration tests (requires network)
+make lint       # Type check all packages
+make clean      # Clean build artifacts
 ```
 
-### Build and Test
+### Manual Build and Test
 
 ```bash
 # Install dependencies
 pnpm install
 
 # Compile Compact contract to TypeScript
-pnpm --filter pci-zkp-contract compact
+make compile
 
 # Build all packages
-pnpm build
+make build
 
 # Run tests
-pnpm test
-
-# Build contract only
-pnpm --filter pci-zkp-contract build
-
-# Build SDK only
-pnpm --filter pci-zkp-sdk build
+make test
 ```
 
 ### Verify Midnight Network is Running
 
 ```bash
-# Check node
-curl http://localhost:9944/health
+make status
 
-# Check proof server
-curl http://localhost:6300/health
-
-# Check indexer
-curl http://localhost:8088/api/v1/graphql
+# Or manually:
+curl http://localhost:9944/health      # Node
+curl http://localhost:6300/health      # Proof server
+curl http://localhost:8088/api/v1/graphql  # Indexer
 ```
 
 ## Related Packages
