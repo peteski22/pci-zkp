@@ -40,7 +40,7 @@ build: compile ## Build all packages
 
 .PHONY: test
 test: ## Run unit tests
-	pnpm test
+	pnpm test:run
 
 .PHONY: test-int
 test-int: ## Run integration tests (requires Midnight network running)

@@ -15,6 +15,10 @@ export interface MidnightConfig {
   indexerUrl?: string;
   /** Network type */
   network?: "standalone" | "testnet";
+  /** Skip network check (for testing) */
+  skipNetworkCheck?: boolean;
+  /** Network check timeout in ms (default: 1000) */
+  networkCheckTimeoutMs?: number;
 }
 
 export interface MidnightProviders {
@@ -26,6 +30,8 @@ const DEFAULT_CONFIG: Required<MidnightConfig> = {
   proofServerUrl: "http://localhost:6300",
   indexerUrl: "http://localhost:8088",
   network: "standalone",
+  skipNetworkCheck: false,
+  networkCheckTimeoutMs: 1000,
 };
 
 /**
@@ -52,9 +58,16 @@ export function createProviders(config: MidnightConfig = {}): MidnightProviders 
 export async function isNetworkAvailable(config: MidnightConfig = {}): Promise<boolean> {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
+  // Skip check if configured (for testing)
+  if (config.skipNetworkCheck) {
+    return false;
+  }
+
+  const timeout = config.networkCheckTimeoutMs ?? 1000;
+
   try {
     const response = await fetch(`${mergedConfig.proofServerUrl}/health`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeout),
     });
     return response.ok;
   } catch {
