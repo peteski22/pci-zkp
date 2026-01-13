@@ -26,9 +26,18 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-COPY --from=builder /app/sdk/dist ./sdk/dist
-COPY --from=builder /app/sdk/package.json ./sdk/
+# Copy workspace and package files
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/pnpm-lock.yaml ./
+COPY --from=builder /app/sdk/package.json ./sdk/
+COPY --from=builder /app/contract/package.json ./contract/
+
+# Install production dependencies only
+RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
+
+# Copy built artifacts
+COPY --from=builder /app/sdk/dist ./sdk/dist
 
 # Default port for ZKP service
 EXPOSE 8084
