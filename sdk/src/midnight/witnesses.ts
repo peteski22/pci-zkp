@@ -26,18 +26,33 @@ export interface AgeVerificationLedger {
 }
 
 /**
+ * Options for date parsing functions
+ */
+export interface DateParseOptions {
+  /** Use UTC methods instead of local time (default: false) */
+  useUTC?: boolean;
+}
+
+/**
  * Create witness functions for age verification
  *
  * These functions provide the private birth date to the ZK circuit.
  * The actual date is never revealed - only the proof that age >= threshold.
  *
  * @param birthDate - The user's birth date
+ * @param opts - Options for date parsing (useUTC: boolean)
  * @returns Witness functions compatible with the compiled Compact contract
+ * @throws TypeError if birthDate is invalid
  */
-export function createAgeWitnesses<T>(birthDate: Date) {
-  const birthYear = birthDate.getFullYear();
-  const birthMonth = birthDate.getMonth() + 1; // JavaScript months are 0-indexed
-  const birthDay = birthDate.getDate();
+export function createAgeWitnesses<T>(birthDate: Date, opts: DateParseOptions = {}) {
+  if (Number.isNaN(birthDate.getTime())) {
+    throw new TypeError("Invalid Date provided to createAgeWitnesses");
+  }
+
+  const useUTC = opts.useUTC ?? false;
+  const birthYear = useUTC ? birthDate.getUTCFullYear() : birthDate.getFullYear();
+  const birthMonth = (useUTC ? birthDate.getUTCMonth() : birthDate.getMonth()) + 1; // JavaScript months are 0-indexed
+  const birthDay = useUTC ? birthDate.getUTCDate() : birthDate.getDate();
 
   return {
     birthYear(context: WitnessContext<AgeVerificationLedger, T>): [T, bigint] {
@@ -54,15 +69,28 @@ export function createAgeWitnesses<T>(birthDate: Date) {
 
 /**
  * Parse a date into circuit-compatible format
+ *
+ * @param date - The date to parse
+ * @param opts - Options for date parsing (useUTC: boolean)
+ * @returns Object with year, month, day as bigint values
+ * @throws TypeError if date is invalid
  */
-export function parseDateForCircuit(date: Date): {
+export function parseDateForCircuit(
+  date: Date,
+  opts: DateParseOptions = {}
+): {
   year: bigint;
   month: bigint;
   day: bigint;
 } {
+  if (Number.isNaN(date.getTime())) {
+    throw new TypeError("Invalid Date provided to parseDateForCircuit");
+  }
+
+  const useUTC = opts.useUTC ?? false;
   return {
-    year: BigInt(date.getFullYear()),
-    month: BigInt(date.getMonth() + 1),
-    day: BigInt(date.getDate()),
+    year: BigInt(useUTC ? date.getUTCFullYear() : date.getFullYear()),
+    month: BigInt((useUTC ? date.getUTCMonth() : date.getMonth()) + 1),
+    day: BigInt(useUTC ? date.getUTCDate() : date.getDate()),
   };
 }

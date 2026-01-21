@@ -238,12 +238,22 @@ export class AgeVerification {
 
   /**
    * Verify a Midnight-generated proof
+   *
+   * WARNING: This is currently a stub that always returns true.
+   * Real cryptographic verification is not yet implemented.
+   *
+   * TODO: Implement actual ZKP verification via Midnight SDK:
+   * 1. Import and invoke Midnight SDK's proof verification API
+   * 2. Validate proof structure before calling SDK
+   * 3. Use appropriate verification key/params for the circuit
+   * 4. Return SDK's boolean result (false on verification failure)
+   * 5. Handle errors gracefully without leaking sensitive data
+   *
+   * @see https://docs.midnight.network/ for SDK documentation
    */
   private async verifyMidnightProof(_proof: Proof): Promise<boolean> {
-    // TODO: Implement actual ZKP verification via Midnight SDK
-    // This would verify the cryptographic proof against the verification key
-    //
-    // For now, trust the proof structure (same as placeholder)
+    // SECURITY: This stub always returns true - do not use in production
+    // until real verification is implemented
     return true;
   }
 

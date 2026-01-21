@@ -41,9 +41,23 @@ export function createProviders(config: MidnightConfig = {}): MidnightProviders 
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
   const proofProvider = httpClientProofProvider(mergedConfig.proofServerUrl);
+
+  // Use URL constructor to properly handle trailing slashes and protocol conversion
+  const indexerBase = new URL(mergedConfig.indexerUrl);
+  const gqlHttpUrl = new URL(
+    "api/v1/graphql",
+    indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`
+  );
+  const indexerWsBase = new URL(indexerBase.href);
+  indexerWsBase.protocol = indexerBase.protocol === "https:" ? "wss:" : "ws:";
+  const gqlWsUrl = new URL(
+    "api/v1/graphql/ws",
+    indexerWsBase.href.endsWith("/") ? indexerWsBase.href : `${indexerWsBase.href}/`
+  );
+
   const publicDataProvider = indexerPublicDataProvider(
-    `${mergedConfig.indexerUrl}/api/v1/graphql`,
-    `${mergedConfig.indexerUrl.replace("http", "ws")}/api/v1/graphql/ws`
+    gqlHttpUrl.href,
+    gqlWsUrl.href
   );
 
   return {
@@ -59,15 +73,13 @@ export async function isNetworkAvailable(config: MidnightConfig = {}): Promise<b
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
   // Skip check if configured (for testing)
-  if (config.skipNetworkCheck) {
+  if (mergedConfig.skipNetworkCheck) {
     return false;
   }
 
-  const timeout = config.networkCheckTimeoutMs ?? 1000;
-
   try {
     const response = await fetch(`${mergedConfig.proofServerUrl}/health`, {
-      signal: AbortSignal.timeout(timeout),
+      signal: AbortSignal.timeout(mergedConfig.networkCheckTimeoutMs),
     });
     return response.ok;
   } catch {

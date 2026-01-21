@@ -128,8 +128,12 @@ describe("Midnight Network Integration", () => {
         indexerUrl: INDEXER_URL,
       });
 
+      // Create a birth date that will always be under 18 (10 years ago)
+      const now = new Date();
+      const underageBirthDate = new Date(now.getFullYear() - 10, 0, 15);
+
       const proof = await verifier.generate({
-        birthDate: new Date("2015-01-15"), // ~11 years old
+        birthDate: underageBirthDate,
         minAge: 18,
       });
 
