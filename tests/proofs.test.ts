@@ -126,4 +126,16 @@ describe("AgeVerification", () => {
     // Age is 24
     expect(proof.publicSignals.verified).toBe(true);
   });
+
+  it("should parse date-only strings as local dates to avoid timezone shift", async () => {
+    // When birthDate is a string (API input), "YYYY-MM-DD" must be parsed as
+    // local midnight, not UTC midnight, to avoid off-by-one day in negative offsets.
+    const proof = await verifier.generate({
+      birthDate: "2000-05-15",
+      minAge: 24,
+      currentDate: new Date(2024, 4, 15), // May 15 2024 local — exactly 24th birthday
+    });
+
+    expect(proof.publicSignals.verified).toBe(true);
+  });
 });

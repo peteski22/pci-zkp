@@ -43,7 +43,16 @@ export class AgeVerification {
     const birthDate = input.birthDate instanceof Date
       ? input.birthDate
       : input.birthDate
-        ? new Date(input.birthDate)
+        ? (() => {
+            // Parse date-only strings (YYYY-MM-DD) as local dates to avoid
+            // timezone shift: new Date("YYYY-MM-DD") parses as UTC midnight,
+            // which rolls back a day in negative UTC offsets (e.g. EST).
+            const parts = input.birthDate!.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (parts) {
+              return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+            }
+            return new Date(input.birthDate!);
+          })()
         : null;
 
     if (!birthDate || isNaN(birthDate.getTime())) {
