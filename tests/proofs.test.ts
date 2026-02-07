@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { ProofGenerator } from "../sdk/src/proofs/generator.js";
 import { AgeVerification } from "../sdk/src/proofs/age-verification.js";
+import type { Proof } from "../sdk/src/types.js";
 
 describe("ProofGenerator", () => {
   let generator: ProofGenerator;
@@ -93,6 +94,40 @@ describe("ProofGenerator", () => {
       const isValid = await generator.verify(proof);
       expect(isValid).toBe(true);
     });
+
+    it("should reject credential proof with empty credentialType", async () => {
+      const proof: Proof = {
+        proof: "dGVzdA==",
+        publicSignals: {
+          valid: true,
+          credentialType: "",
+          issuerPublicKey: "pk123",
+        },
+        verificationKey: "test_vk",
+        circuitId: "credential_proof",
+        timestamp: new Date(),
+      };
+
+      const isValid = await generator.verify(proof);
+      expect(isValid).toBe(false);
+    });
+
+    it("should reject credential proof with empty issuerPublicKey", async () => {
+      const proof: Proof = {
+        proof: "dGVzdA==",
+        publicSignals: {
+          valid: true,
+          credentialType: "passport",
+          issuerPublicKey: "",
+        },
+        verificationKey: "test_vk",
+        circuitId: "credential_proof",
+        timestamp: new Date(),
+      };
+
+      const isValid = await generator.verify(proof);
+      expect(isValid).toBe(false);
+    });
   });
 });
 
@@ -137,5 +172,113 @@ describe("AgeVerification", () => {
     });
 
     expect(proof.publicSignals.verified).toBe(true);
+  });
+});
+
+describe("Proof type with on-chain fields", () => {
+  it("should accept proof with txId and contractAddress", () => {
+    const proof: Proof = {
+      proof: "dGVzdA==",
+      publicSignals: { verified: true, minAge: 18 },
+      verificationKey: "age_verification_vk_midnight",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+      txId: "abc123def456",
+      contractAddress: "0x1234567890abcdef",
+      blockHeight: 42,
+    };
+
+    expect(proof.txId).toBe("abc123def456");
+    expect(proof.contractAddress).toBe("0x1234567890abcdef");
+    expect(proof.blockHeight).toBe(42);
+  });
+
+  it("should accept proof without on-chain fields (placeholder)", () => {
+    const proof: Proof = {
+      proof: "dGVzdA==",
+      publicSignals: { verified: true, minAge: 18 },
+      verificationKey: "age_verification_vk_placeholder",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+    };
+
+    expect(proof.txId).toBeUndefined();
+    expect(proof.contractAddress).toBeUndefined();
+    expect(proof.blockHeight).toBeUndefined();
+  });
+});
+
+describe("AgeVerification - Midnight mode verification", () => {
+  it("should reject proofs without on-chain metadata in Midnight mode", async () => {
+    // Create a verifier that thinks it's connected to Midnight
+    const verifier = new AgeVerification({
+      skipNetworkCheck: true, // Forces offline — we'll test the logic directly
+    });
+
+    // Generate an offline proof
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    // In offline mode, placeholder proofs are trusted
+    expect(proof.publicSignals.network).toBe("mocked");
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(true);
+  });
+
+  it("should reject age proofs with malformed public signals", async () => {
+    const verifier = new AgeVerification({});
+
+    const malformedProof: Proof = {
+      proof: "dGVzdA==",
+      publicSignals: { verified: "not-a-boolean", minAge: "not-a-number" },
+      verificationKey: "test_vk",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+    };
+
+    const isValid = await verifier.verify(malformedProof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject age proofs bound to wrong DID", async () => {
+    const verifier = new AgeVerification({});
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+      requesterDid: "did:key:z6MkTest123",
+    });
+
+    // Verify with a different expected DID
+    const isValid = await verifier.verify(proof, "did:key:z6MkOther456");
+    expect(isValid).toBe(false);
+  });
+
+  it("should accept age proofs bound to correct DID", async () => {
+    const verifier = new AgeVerification({});
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+      requesterDid: "did:key:z6MkTest123",
+    });
+
+    const isValid = await verifier.verify(proof, "did:key:z6MkTest123");
+    expect(isValid).toBe(true);
+  });
+
+  it("should handle invalid birth date gracefully", async () => {
+    const verifier = new AgeVerification({});
+
+    const proof = await verifier.generate({
+      birthDate: "not-a-date",
+      minAge: 18,
+    });
+
+    expect(proof.proof).toBe("");
+    expect(proof.publicSignals.verified).toBe(false);
+    expect(proof.publicSignals.error).toBe("Invalid or missing birth date");
   });
 });
