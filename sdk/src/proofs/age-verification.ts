@@ -236,12 +236,12 @@ export class AgeVerification {
       return false;
     }
 
-    // If proof was generated with Midnight, verify cryptographically
-    if (signals.network === "midnight") {
+    // Always verify cryptographically when Midnight is active
+    if (this.useMidnight) {
       return this.verifyMidnightProof(proof);
     }
 
-    // Placeholder proofs are trusted for testing
+    // Placeholder proofs are trusted only in offline/test mode
     return true;
   }
 
