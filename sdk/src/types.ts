@@ -13,6 +13,12 @@ export interface Proof {
   circuitId: string;
   /** Generation timestamp */
   timestamp: Date;
+  /** Midnight transaction ID (present when proof was submitted on-chain) */
+  txId?: string;
+  /** Contract address for this specific proof interaction */
+  contractAddress?: string;
+  /** Block height where proof was confirmed */
+  blockHeight?: number;
 }
 
 export interface ProofConfig {
