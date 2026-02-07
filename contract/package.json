@@ -7,7 +7,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "compact": "compact compile src/proofs.compact --output managed",
+    "compact": "compactc.bin src/proofs.compact managed",
     "build": "pnpm run compact && tsc && cp -r managed dist/",
     "clean": "rm -rf dist managed",
     "typecheck": "tsc --noEmit",
