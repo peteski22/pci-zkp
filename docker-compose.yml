@@ -1,13 +1,13 @@
-# Midnight Network - Local Development Stack
+# Midnight Network - Local Development Stack (Ledger v7)
 # Run: docker compose up -d
 #
 # This starts a local Midnight network for ZK proof generation and verification.
-# Based on: https://github.com/bricktowers/midnight-rwa
+# Based on: https://github.com/bricktowers/midnight-local-network
 
 services:
   # Midnight blockchain node
   node:
-    image: midnightnetwork/midnight-node:0.12.0
+    image: midnightntwrk/midnight-node:0.20.1
     ports:
       - "9944:9944"
     environment:
@@ -19,9 +19,9 @@ services:
       retries: 5
       start_period: 40s
 
-  # Proof server - generates ZK proofs locally
+  # Proof server - generates ZK proofs locally (pre-baked ZK params)
   proof-server:
-    image: midnightnetwork/proof-server:latest
+    image: bricktowers/proof-server:7.0.0
     ports:
       - "6300:6300"
     command: ["midnight-proof-server", "--network", "undeployed"]
@@ -30,7 +30,7 @@ services:
 
   # Indexer - queries blockchain state
   indexer:
-    image: midnightntwrk/indexer-standalone:2.1.2
+    image: midnightntwrk/indexer-standalone:3.0.0
     ports:
       - "8088:8088"
     environment:
