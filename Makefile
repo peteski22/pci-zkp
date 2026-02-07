@@ -2,7 +2,7 @@
 # Run 'make help' to see available targets
 
 # Ensure compactc is in PATH
-export PATH := $(HOME)/.compact/versions/0.26.0/x86_64-unknown-linux-musl:$(PATH)
+export PATH := $(HOME)/.compact/versions/0.28.0/x86_64-unknown-linux-musl:$(PATH)
 
 .PHONY: help
 help: ## Show this help
