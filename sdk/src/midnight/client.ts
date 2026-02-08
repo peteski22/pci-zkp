@@ -156,7 +156,9 @@ export async function queryTransaction(
   const query = `
     query Transaction($txId: HexString!) {
       transaction(txHash: $txId) {
-        blockHeight
+        block {
+          height
+        }
       }
     }
   `;
@@ -175,13 +177,13 @@ export async function queryTransaction(
     if (!response.ok) return null;
 
     const result = (await response.json()) as {
-      data?: { transaction?: { blockHeight: number } };
+      data?: { transaction?: { block?: { height: number } } };
     };
 
-    const tx = result.data?.transaction;
-    if (!tx) return null;
+    const height = result.data?.transaction?.block?.height;
+    if (height === undefined || height === null) return null;
 
-    return { blockHeight: tx.blockHeight };
+    return { blockHeight: height };
   } catch {
     return null;
   }
