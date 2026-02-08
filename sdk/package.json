@@ -30,11 +30,6 @@
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "3.0.0",
     "@midnight-ntwrk/midnight-js-types": "3.0.0",
     "@midnight-ntwrk/midnight-js-node-zk-config-provider": "3.0.0",
-    "@midnight-ntwrk/wallet-sdk-facade": "1.0.0",
-    "@midnight-ntwrk/wallet-sdk-hd": "3.0.0",
-    "@midnight-ntwrk/wallet-sdk-shielded": "1.0.0",
-    "@midnight-ntwrk/wallet-sdk-unshielded-wallet": "1.0.0",
-    "@midnight-ntwrk/wallet-sdk-dust-wallet": "1.0.0",
     "@midnight-ntwrk/wallet-sdk-address-format": "3.0.0"
   },
   "devDependencies": {
