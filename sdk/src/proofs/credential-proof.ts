@@ -74,12 +74,17 @@ export class CredentialProof {
       return false;
     }
 
-    // If proof has on-chain metadata, it would need indexer verification
+    // The proof's own validity flag must be true
+    if (!signals.valid) {
+      return false;
+    }
+
+    // If proof has on-chain metadata, it needs indexer verification
     // (not yet implemented for credential proofs)
     if (proof.txId && proof.contractAddress) {
-      // On-chain credential proof verification will mirror the age verification
-      // pattern: query contract state + confirm transaction exists
-      return true;
+      throw new Error(
+        "On-chain credential proof verification is not yet implemented"
+      );
     }
 
     return true;
