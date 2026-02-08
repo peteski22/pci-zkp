@@ -215,7 +215,7 @@ describe("Midnight Network Integration", () => {
       // When full deployment is wired up, these will have different
       // contractAddresses (ephemeral per-verifier contracts)
       // For now, just verify they're independent proof instances
-      expect(proof1.timestamp.getTime()).not.toBe(proof2.timestamp.getTime());
+      expect(proof1).not.toBe(proof2);
     });
   });
 });

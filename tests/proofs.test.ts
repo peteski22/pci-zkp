@@ -95,6 +95,22 @@ describe("ProofGenerator", () => {
       expect(isValid).toBe(true);
     });
 
+    it("should reject expired credential proof", async () => {
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: Math.floor(Date.now() / 1000) - 86400, // Yesterday
+        issuerSignature: "sig123",
+        issuerPublicKey: "pk123",
+        credentialType: "driver_license",
+      });
+
+      // The proof has valid=false because credential is expired
+      expect(proof.publicSignals.valid).toBe(false);
+      // verify() should reject proofs where valid is false
+      const isValid = await generator.verify(proof);
+      expect(isValid).toBe(false);
+    });
+
     it("should reject credential proof with empty credentialType", async () => {
       const proof: Proof = {
         proof: "dGVzdA==",
@@ -209,10 +225,9 @@ describe("Proof type with on-chain fields", () => {
 });
 
 describe("AgeVerification - Midnight mode verification", () => {
-  it("should reject proofs without on-chain metadata in Midnight mode", async () => {
-    // Create a verifier that thinks it's connected to Midnight
+  it("should accept placeholder proofs in offline mode", async () => {
     const verifier = new AgeVerification({
-      skipNetworkCheck: true, // Forces offline — we'll test the logic directly
+      skipNetworkCheck: true, // Forces offline — placeholder proofs are trusted
     });
 
     // Generate an offline proof
