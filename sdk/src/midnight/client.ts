@@ -100,11 +100,17 @@ export async function isNetworkAvailable(config: MidnightConfig = {}): Promise<b
   }
 }
 
+/** GraphQL response shape with optional errors array. */
+interface GraphQLResponse<T> {
+  data?: T;
+  errors?: Array<{ message: string }>;
+}
+
 /**
  * Query contract state from the indexer via GraphQL.
  *
  * Returns the raw contract state data if the contract exists on-chain,
- * or null if not found.
+ * or null if not found. GraphQL-level errors are logged for diagnostics.
  */
 export async function queryContractState(
   indexerUrl: string,
@@ -133,9 +139,14 @@ export async function queryContractState(
 
     if (!response.ok) return null;
 
-    const result = (await response.json()) as {
-      data?: { contractState?: { data: Record<string, unknown> } };
-    };
+    const result = (await response.json()) as GraphQLResponse<{
+      contractState?: { data: Record<string, unknown> };
+    }>;
+
+    if (result.errors?.length) {
+      console.warn("queryContractState: GraphQL errors:", result.errors);
+    }
+
     return result.data?.contractState?.data ?? null;
   } catch {
     return null;
@@ -146,6 +157,7 @@ export async function queryContractState(
  * Query a transaction by ID from the indexer to verify it exists on-chain.
  *
  * Returns the block height if the transaction is confirmed, or null if not found.
+ * GraphQL-level errors are logged for diagnostics.
  */
 export async function queryTransaction(
   indexerUrl: string,
@@ -176,9 +188,13 @@ export async function queryTransaction(
 
     if (!response.ok) return null;
 
-    const result = (await response.json()) as {
-      data?: { transaction?: { block?: { height: number } } };
-    };
+    const result = (await response.json()) as GraphQLResponse<{
+      transaction?: { block?: { height: number } };
+    }>;
+
+    if (result.errors?.length) {
+      console.warn("queryTransaction: GraphQL errors:", result.errors);
+    }
 
     const height = result.data?.transaction?.block?.height;
     if (height === undefined || height === null) return null;
@@ -190,7 +206,7 @@ export async function queryTransaction(
 }
 
 /**
- * Client state - tracks whether we're connected to real network or using mocks
+ * Client state - tracks whether we're connected to real network or using mocks.
  */
 export interface ClientState {
   connected: boolean;
@@ -199,6 +215,11 @@ export interface ClientState {
   config?: MidnightConfig;
 }
 
+/**
+ * Module-level singleton shared by all AgeVerification instances.
+ * This is appropriate for single-tenant use; multi-tenant or concurrent
+ * contexts (e.g. serverless) would need per-instance state instead.
+ */
 let clientState: ClientState = {
   connected: false,
   network: "mocked",

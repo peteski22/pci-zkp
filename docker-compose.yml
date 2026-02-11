@@ -19,14 +19,20 @@ services:
       retries: 5
       start_period: 40s
 
-  # Proof server - generates ZK proofs locally (pre-baked ZK params)
+  # Proof server - generates ZK proofs locally
   proof-server:
-    image: bricktowers/proof-server:7.0.0
+    image: midnightnetwork/proof-server:4.0.0
     ports:
       - "6300:6300"
     command: ["midnight-proof-server", "--network", "undeployed"]
     environment:
       RUST_BACKTRACE: full
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6300/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # Indexer - queries blockchain state
   indexer:
@@ -37,6 +43,12 @@ services:
       APP__INFRA__SECRET: "303132333435363738393031323334353637383930313233343536373839303132"
       APP__INFRA__NODE__URL: "ws://node:9944"
       RUST_LOG: "indexer=debug,chain_indexer=debug,indexer_api=debug"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-o", "/dev/null", "http://localhost:8088/api/v3/graphql"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     depends_on:
       node:
         condition: service_healthy
@@ -52,9 +64,12 @@ services:
       MIDNIGHT_PROOF_SERVER_URL: "http://proof-server:6300"
       MIDNIGHT_INDEXER_URL: "http://indexer:8088"
     depends_on:
-      - node
-      - proof-server
-      - indexer
+      node:
+        condition: service_healthy
+      proof-server:
+        condition: service_healthy
+      indexer:
+        condition: service_healthy
 
 networks:
   default:

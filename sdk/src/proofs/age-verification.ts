@@ -26,6 +26,21 @@ export class AgeVerification {
   constructor(private readonly config: ProofConfig & MidnightConfig) {}
 
   /**
+   * Calculate age from birth date and current date.
+   */
+  private calculateAge(birthDate: Date, currentDate: Date): number {
+    let age = currentDate.getFullYear() - birthDate.getFullYear();
+    const birthdayPassed =
+      currentDate.getMonth() > birthDate.getMonth() ||
+      (currentDate.getMonth() === birthDate.getMonth() &&
+        currentDate.getDate() >= birthDate.getDate());
+    if (!birthdayPassed) {
+      age--;
+    }
+    return age;
+  }
+
+  /**
    * Initialize the verifier, connecting to Midnight if available
    */
   async initialize(): Promise<boolean> {
@@ -115,7 +130,8 @@ export class AgeVerification {
       throw new Error("Midnight client not initialized");
     }
 
-    // Prepare circuit inputs
+    // Prepare circuit inputs (used when full wallet + deployment flow is wired up).
+    // See https://github.com/peteski22/pci-zkp/issues/7 for the deployment roadmap.
     const current = parseDateForCircuit(currentDate);
     const witnesses = createAgeWitnesses(birthDate);
     const circuitArgs = {
@@ -125,54 +141,11 @@ export class AgeVerification {
       currentDay: current.day,
     };
 
-    // The full deployment + callTx flow requires the compiled contract assets
-    // (managed/ directory from compactc) and wallet setup. When running with
-    // a real Midnight stack (make dev), this executes the real ZK circuit.
-    //
-    // The deployContract() + callTx pattern:
-    //   const compiledContract = CompiledContract.make('proofs', Contract).pipe(
-    //     CompiledContract.withVacantWitnesses,
-    //     CompiledContract.withCompiledFileAssets(zkConfigPath),
-    //   );
-    //   const contract = await deployContract(providers, {
-    //     compiledContract,
-    //     privateStateId: 'ageVerification',
-    //     initialPrivateState: {},
-    //   });
-    //   const result = await contract.callTx.verifyAge(
-    //     circuitArgs.minAge, circuitArgs.currentYear,
-    //     circuitArgs.currentMonth, circuitArgs.currentDay,
-    //   );
-    //   const txId = result.public.txHash;
-    //   const blockHeight = Number(result.public.blockHeight);
-    //   const contractAddress = contract.deployTxData.public.contractAddress;
-    //
-    // Until the full wallet infrastructure is wired up (HD seed management,
-    // shielded/unshielded/dust wallets, and the signRecipe workaround),
-    // we compute the expected result and emit a proof with the Midnight
-    // network marker. Integration tests (make test-int) exercise the real flow.
-
     void witnesses;
     void circuitArgs;
 
-    // Calculate the expected result
-    const birthYear = birthDate.getFullYear();
-    const birthMonth = birthDate.getMonth() + 1;
-    const birthDay = birthDate.getDate();
-
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
-    const currentDay = currentDate.getDate();
-
-    let age = currentYear - birthYear;
-    const birthdayPassed =
-      currentMonth > birthMonth ||
-      (currentMonth === birthMonth && currentDay >= birthDay);
-    if (!birthdayPassed) {
-      age--;
-    }
-
-    const verified = age >= minAge;
+    // Calculate the expected result until full on-chain execution is wired up.
+    const verified = this.calculateAge(birthDate, currentDate) >= minAge;
 
     const publicSignals: Record<string, unknown> = {
       verified,
@@ -205,24 +178,7 @@ export class AgeVerification {
     currentDate: Date,
     requesterDid?: string
   ): Proof {
-    // Calculate age (this is done privately in the circuit)
-    const birthYear = birthDate.getFullYear();
-    const birthMonth = birthDate.getMonth();
-    const birthDay = birthDate.getDate();
-
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth();
-    const currentDay = currentDate.getDate();
-
-    let age = currentYear - birthYear;
-    const birthdayPassed =
-      currentMonth > birthMonth ||
-      (currentMonth === birthMonth && currentDay >= birthDay);
-    if (!birthdayPassed) {
-      age--;
-    }
-
-    const verified = age >= minAge;
+    const verified = this.calculateAge(birthDate, currentDate) >= minAge;
 
     // Build public signals - includes requesterDid if provided (binds proof to identity)
     const publicSignals: Record<string, unknown> = {
@@ -265,6 +221,9 @@ export class AgeVerification {
     if (proof.circuitId !== "age_verification") {
       throw new Error("Invalid circuit ID for age verification");
     }
+
+    // Ensure we know whether the Midnight network is available.
+    await this.initialize();
 
     const signals = proof.publicSignals as {
       verified?: boolean;
@@ -317,7 +276,11 @@ export class AgeVerification {
     }
 
     const clientState = getClientState();
-    const indexerUrl = clientState.config?.indexerUrl ?? "http://localhost:8088";
+    if (!clientState.config?.indexerUrl) {
+      // Midnight is active but config is missing — cannot verify.
+      return false;
+    }
+    const indexerUrl = clientState.config.indexerUrl;
 
     // 1. Query contract state from the indexer
     const contractState = await queryContractState(indexerUrl, proof.contractAddress);
@@ -325,9 +288,12 @@ export class AgeVerification {
       return false;
     }
 
-    // 2. Check the on-chain verified field matches the proof's claim
-    const onChainVerified = contractState.verified;
-    if (onChainVerified !== proof.publicSignals.verified) {
+    // 2. Check the on-chain verified field matches the proof's claim.
+    if (contractState.verified === undefined) {
+      // Contract state does not contain a 'verified' field — schema mismatch.
+      return false;
+    }
+    if (contractState.verified !== proof.publicSignals.verified) {
       return false;
     }
 

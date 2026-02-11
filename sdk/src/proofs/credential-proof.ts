@@ -79,12 +79,10 @@ export class CredentialProof {
       return false;
     }
 
-    // If proof has on-chain metadata, it needs indexer verification
-    // (not yet implemented for credential proofs)
+    // If proof has on-chain metadata, it needs indexer verification.
+    // Not yet implemented for credential proofs, so treat as unverifiable.
     if (proof.txId && proof.contractAddress) {
-      throw new Error(
-        "On-chain credential proof verification is not yet implemented"
-      );
+      return false;
     }
 
     return true;
