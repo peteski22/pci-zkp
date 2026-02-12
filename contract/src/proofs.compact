@@ -5,7 +5,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-pragma language_version >= 0.16 && <= 0.26;
+pragma language_version >= 0.20 && < 0.29;
 
 import CompactStandardLibrary;
 

@@ -51,19 +51,41 @@ export class CredentialProof {
 
   /**
    * Verify a credential proof
+   *
+   * Checks structure validity of public signals. On-chain verification
+   * (when available) would additionally check txId/contractAddress.
    */
   async verify(proof: Proof): Promise<boolean> {
     if (proof.circuitId !== "credential_proof") {
       throw new Error("Invalid circuit ID for credential proof");
     }
 
-    // TODO: Implement actual ZKP verification via Midnight SDK
     const signals = proof.publicSignals as unknown as CredentialProofOutput;
-    return (
+
+    // Validate required structure fields
+    const structureValid =
       typeof signals.valid === "boolean" &&
       typeof signals.credentialType === "string" &&
-      typeof signals.issuerPublicKey === "string"
-    );
+      signals.credentialType.length > 0 &&
+      typeof signals.issuerPublicKey === "string" &&
+      signals.issuerPublicKey.length > 0;
+
+    if (!structureValid) {
+      return false;
+    }
+
+    // The proof's own validity flag must be true
+    if (!signals.valid) {
+      return false;
+    }
+
+    // If proof has any on-chain metadata, it needs indexer verification.
+    // Not yet implemented for credential proofs, so treat as unverifiable.
+    if (proof.txId || proof.contractAddress) {
+      return false;
+    }
+
+    return true;
   }
 
   private generatePlaceholderProof(): string {

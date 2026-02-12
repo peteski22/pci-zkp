@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ProofGenerator } from "../sdk/src/proofs/generator.js";
 import { AgeVerification } from "../sdk/src/proofs/age-verification.js";
+import type { Proof } from "../sdk/src/types.js";
+import * as client from "../sdk/src/midnight/client.js";
 
 describe("ProofGenerator", () => {
   let generator: ProofGenerator;
@@ -93,6 +95,56 @@ describe("ProofGenerator", () => {
       const isValid = await generator.verify(proof);
       expect(isValid).toBe(true);
     });
+
+    it("should reject expired credential proof", async () => {
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: Math.floor(Date.now() / 1000) - 86400, // Yesterday
+        issuerSignature: "sig123",
+        issuerPublicKey: "pk123",
+        credentialType: "driver_license",
+      });
+
+      // The proof has valid=false because credential is expired
+      expect(proof.publicSignals.valid).toBe(false);
+      // verify() should reject proofs where valid is false
+      const isValid = await generator.verify(proof);
+      expect(isValid).toBe(false);
+    });
+
+    it("should reject credential proof with empty credentialType", async () => {
+      const proof: Proof = {
+        proof: "dGVzdA==",
+        publicSignals: {
+          valid: true,
+          credentialType: "",
+          issuerPublicKey: "pk123",
+        },
+        verificationKey: "test_vk",
+        circuitId: "credential_proof",
+        timestamp: new Date(),
+      };
+
+      const isValid = await generator.verify(proof);
+      expect(isValid).toBe(false);
+    });
+
+    it("should reject credential proof with empty issuerPublicKey", async () => {
+      const proof: Proof = {
+        proof: "dGVzdA==",
+        publicSignals: {
+          valid: true,
+          credentialType: "passport",
+          issuerPublicKey: "",
+        },
+        verificationKey: "test_vk",
+        circuitId: "credential_proof",
+        timestamp: new Date(),
+      };
+
+      const isValid = await generator.verify(proof);
+      expect(isValid).toBe(false);
+    });
   });
 });
 
@@ -137,5 +189,259 @@ describe("AgeVerification", () => {
     });
 
     expect(proof.publicSignals.verified).toBe(true);
+  });
+});
+
+describe("Proof type with on-chain fields", () => {
+  it("should accept proof with txId and contractAddress", () => {
+    const proof: Proof = {
+      proof: "dGVzdA==",
+      publicSignals: { verified: true, minAge: 18 },
+      verificationKey: "age_verification_vk_midnight",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+      txId: "abc123def456",
+      contractAddress: "0x1234567890abcdef",
+      blockHeight: 42,
+    };
+
+    expect(proof.txId).toBe("abc123def456");
+    expect(proof.contractAddress).toBe("0x1234567890abcdef");
+    expect(proof.blockHeight).toBe(42);
+  });
+
+  it("should accept proof without on-chain fields (placeholder)", () => {
+    const proof: Proof = {
+      proof: "dGVzdA==",
+      publicSignals: { verified: true, minAge: 18 },
+      verificationKey: "age_verification_vk_placeholder",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+    };
+
+    expect(proof.txId).toBeUndefined();
+    expect(proof.contractAddress).toBeUndefined();
+    expect(proof.blockHeight).toBeUndefined();
+  });
+});
+
+describe("AgeVerification - Midnight mode verification", () => {
+  it("should accept placeholder proofs in offline mode", async () => {
+    const verifier = new AgeVerification({
+      skipNetworkCheck: true, // Forces offline — placeholder proofs are trusted
+    });
+
+    // Generate an offline proof
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    // In offline mode, placeholder proofs are trusted
+    expect(proof.publicSignals.network).toBe("mocked");
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(true);
+  });
+
+  it("should reject age proofs with malformed public signals", async () => {
+    const verifier = new AgeVerification({});
+
+    const malformedProof: Proof = {
+      proof: "dGVzdA==",
+      publicSignals: { verified: "not-a-boolean", minAge: "not-a-number" },
+      verificationKey: "test_vk",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+    };
+
+    const isValid = await verifier.verify(malformedProof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject age proofs bound to wrong DID", async () => {
+    const verifier = new AgeVerification({});
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+      requesterDid: "did:key:z6MkTest123",
+    });
+
+    // Verify with a different expected DID
+    const isValid = await verifier.verify(proof, "did:key:z6MkOther456");
+    expect(isValid).toBe(false);
+  });
+
+  it("should accept age proofs bound to correct DID", async () => {
+    const verifier = new AgeVerification({});
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+      requesterDid: "did:key:z6MkTest123",
+    });
+
+    const isValid = await verifier.verify(proof, "did:key:z6MkTest123");
+    expect(isValid).toBe(true);
+  });
+
+  it("should handle invalid birth date gracefully", async () => {
+    const verifier = new AgeVerification({});
+
+    const proof = await verifier.generate({
+      birthDate: "not-a-date",
+      minAge: 18,
+    });
+
+    expect(proof.proof).toBe("");
+    expect(proof.publicSignals.verified).toBe(false);
+    expect(proof.publicSignals.error).toBe("Invalid or missing birth date");
+  });
+});
+
+describe("AgeVerification - verifyMidnightProof branches", () => {
+  // Helper: build a valid on-chain proof for testing.
+  function makeOnChainProof(overrides: Partial<Proof> = {}): Proof {
+    return {
+      proof: "dGVzdA==",
+      publicSignals: { verified: true, minAge: 18 },
+      verificationKey: "age_verification_vk_midnight",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+      txId: "tx123",
+      contractAddress: "0xcontract",
+      blockHeight: 10,
+      ...overrides,
+    };
+  }
+
+  // Force the verifier into Midnight mode via mocks.
+  function mockMidnightMode() {
+    vi.spyOn(client, "initializeClient").mockResolvedValue(true);
+    vi.spyOn(client, "getClientState").mockReturnValue({
+      connected: true,
+      network: "standalone",
+      config: { indexerUrl: "http://localhost:8088" },
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should reject proof without txId in Midnight mode", async () => {
+    mockMidnightMode();
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ txId: undefined });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof without contractAddress in Midnight mode", async () => {
+    mockMidnightMode();
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ contractAddress: undefined });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when indexer config is missing", async () => {
+    vi.spyOn(client, "initializeClient").mockResolvedValue(true);
+    vi.spyOn(client, "getClientState").mockReturnValue({
+      connected: true,
+      network: "standalone",
+      config: {},
+    });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when contract state is not found", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue(null);
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when contract state has no verified field", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ someOtherField: true });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when on-chain verified disagrees with proof claim", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: false });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ publicSignals: { verified: true, minAge: 18 } });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when transaction is not found on-chain", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue(null);
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when block height does not match", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue({ blockHeight: 99 });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ blockHeight: 10 });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should accept valid on-chain proof with matching state and transaction", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue({ blockHeight: 10 });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(true);
+  });
+
+  it("should accept proof when blockHeight is not specified (skip height check)", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue({ blockHeight: 42 });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ blockHeight: undefined });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(true);
   });
 });
