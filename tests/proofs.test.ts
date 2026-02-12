@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ProofGenerator } from "../sdk/src/proofs/generator.js";
 import { AgeVerification } from "../sdk/src/proofs/age-verification.js";
 import type { Proof } from "../sdk/src/types.js";
+import * as client from "../sdk/src/midnight/client.js";
 
 describe("ProofGenerator", () => {
   let generator: ProofGenerator;
@@ -295,5 +296,152 @@ describe("AgeVerification - Midnight mode verification", () => {
     expect(proof.proof).toBe("");
     expect(proof.publicSignals.verified).toBe(false);
     expect(proof.publicSignals.error).toBe("Invalid or missing birth date");
+  });
+});
+
+describe("AgeVerification - verifyMidnightProof branches", () => {
+  // Helper: build a valid on-chain proof for testing.
+  function makeOnChainProof(overrides: Partial<Proof> = {}): Proof {
+    return {
+      proof: "dGVzdA==",
+      publicSignals: { verified: true, minAge: 18 },
+      verificationKey: "age_verification_vk_midnight",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+      txId: "tx123",
+      contractAddress: "0xcontract",
+      blockHeight: 10,
+      ...overrides,
+    };
+  }
+
+  // Force the verifier into Midnight mode via mocks.
+  function mockMidnightMode() {
+    vi.spyOn(client, "initializeClient").mockResolvedValue(true);
+    vi.spyOn(client, "getClientState").mockReturnValue({
+      connected: true,
+      network: "standalone",
+      config: { indexerUrl: "http://localhost:8088" },
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should reject proof without txId in Midnight mode", async () => {
+    mockMidnightMode();
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ txId: undefined });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof without contractAddress in Midnight mode", async () => {
+    mockMidnightMode();
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ contractAddress: undefined });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when indexer config is missing", async () => {
+    vi.spyOn(client, "initializeClient").mockResolvedValue(true);
+    vi.spyOn(client, "getClientState").mockReturnValue({
+      connected: true,
+      network: "standalone",
+      config: {},
+    });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when contract state is not found", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue(null);
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when contract state has no verified field", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ someOtherField: true });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when on-chain verified disagrees with proof claim", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: false });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ publicSignals: { verified: true, minAge: 18 } });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when transaction is not found on-chain", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue(null);
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should reject proof when block height does not match", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue({ blockHeight: 99 });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ blockHeight: 10 });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(false);
+  });
+
+  it("should accept valid on-chain proof with matching state and transaction", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue({ blockHeight: 10 });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof();
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(true);
+  });
+
+  it("should accept proof when blockHeight is not specified (skip height check)", async () => {
+    mockMidnightMode();
+    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
+    vi.spyOn(client, "queryTransaction").mockResolvedValue({ blockHeight: 42 });
+
+    const verifier = new AgeVerification({});
+    const proof = makeOnChainProof({ blockHeight: undefined });
+
+    const isValid = await verifier.verify(proof);
+    expect(isValid).toBe(true);
   });
 });

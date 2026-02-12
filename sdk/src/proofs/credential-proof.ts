@@ -79,9 +79,9 @@ export class CredentialProof {
       return false;
     }
 
-    // If proof has on-chain metadata, it needs indexer verification.
+    // If proof has any on-chain metadata, it needs indexer verification.
     // Not yet implemented for credential proofs, so treat as unverifiable.
-    if (proof.txId && proof.contractAddress) {
+    if (proof.txId || proof.contractAddress) {
       return false;
     }
 

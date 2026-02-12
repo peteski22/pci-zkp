@@ -81,7 +81,11 @@ export function createProviders(config: MidnightConfig = {}): MidnightProviders 
 }
 
 /**
- * Check if Midnight network is available
+ * Check if Midnight network is available.
+ *
+ * Verifies both the proof server (GET /health) and the indexer
+ * (lightweight GraphQL introspection query). Both must respond
+ * successfully for the network to be considered available.
  */
 export async function isNetworkAvailable(config: MidnightConfig = {}): Promise<boolean> {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
@@ -90,11 +94,22 @@ export async function isNetworkAvailable(config: MidnightConfig = {}): Promise<b
     return false;
   }
 
+  const timeout = mergedConfig.networkCheckTimeoutMs;
+
   try {
-    const response = await fetch(`${mergedConfig.proofServerUrl}/health`, {
-      signal: AbortSignal.timeout(mergedConfig.networkCheckTimeoutMs),
-    });
-    return response.ok;
+    const [proofServerResult, indexerResult] = await Promise.all([
+      fetch(`${mergedConfig.proofServerUrl}/health`, {
+        signal: AbortSignal.timeout(timeout),
+      }).then((r) => r.ok).catch(() => false),
+      fetch(buildIndexerUrls(mergedConfig.indexerUrl).httpUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "{ __typename }" }),
+        signal: AbortSignal.timeout(timeout),
+      }).then((r) => r.ok).catch(() => false),
+    ]);
+
+    return proofServerResult && indexerResult;
   } catch {
     return false;
   }

@@ -110,9 +110,15 @@ export class AgeVerification {
   }
 
   /**
-   * Generate proof using real Midnight network
+   * Generate proof using real Midnight network.
    *
-   * Flow:
+   * Currently prepares circuit inputs and witnesses but returns a
+   * locally-computed result without deploying a contract or submitting
+   * a transaction. The returned proof will NOT contain txId,
+   * contractAddress, or blockHeight — verifyMidnightProof() will
+   * therefore reject it until full on-chain deployment is wired up.
+   *
+   * Target flow (see https://github.com/peteski22/pci-zkp/issues/7):
    * 1. Deploy a fresh ephemeral contract (privacy: no cross-verifier linkability)
    * 2. Set private state (birth date) via witnesses
    * 3. Call contract.callTx.verifyAge() — auto-generates ZK proof
@@ -297,13 +303,18 @@ export class AgeVerification {
       return false;
     }
 
-    // 3. Confirm the transaction exists on-chain
+    // 3. Confirm the transaction exists on-chain.
+    // Note: the indexer does not currently expose which contract a
+    // transaction targets, so we cannot verify tx-contract association.
+    // This is acceptable for now because each contract is ephemeral
+    // (single-use), but a future indexer API upgrade should allow
+    // binding the txId to the contractAddress.
     const txResult = await queryTransaction(indexerUrl, proof.txId);
     if (!txResult) {
       return false;
     }
 
-    // 4. If proof claims a specific block height, verify it matches
+    // 4. If proof claims a specific block height, verify it matches.
     if (proof.blockHeight !== undefined && txResult.blockHeight !== proof.blockHeight) {
       return false;
     }
