@@ -7,6 +7,7 @@
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import type { ProofConfig } from "./types.js";
+import type { MidnightConfig, MidnightNetwork } from "./midnight/client.js";
 import * as proofModules from "./proofs/index.js";
 
 const PORT = parseInt(process.env.PORT || "8084", 10);
@@ -19,10 +20,22 @@ interface ProofHandler {
 const proofHandlers: Record<string, ProofHandler> = {};
 
 /**
- * Load all proof handlers from the barrel export
+ * Load all proof handlers from the barrel export.
+ *
+ * Reads Midnight network configuration from environment variables and
+ * passes it through to each proof handler constructor so that handlers
+ * can connect to the correct node, indexer, and proof server.
  */
 function loadProofHandlers(): void {
-  const config: ProofConfig = { proverEndpoint: process.env.PROOF_SERVER_URL };
+  const network = (process.env.MIDNIGHT_NETWORK as MidnightNetwork | undefined) ?? undefined;
+
+  const config: ProofConfig & MidnightConfig = {
+    proverEndpoint: process.env.PROOF_SERVER_URL,
+    proofServerUrl: process.env.MIDNIGHT_PROOF_SERVER_URL ?? process.env.PROOF_SERVER_URL,
+    nodeUrl: process.env.MIDNIGHT_NODE_URL,
+    indexerUrl: process.env.MIDNIGHT_INDEXER_URL,
+    network,
+  };
 
   for (const [name, HandlerClass] of Object.entries(proofModules)) {
     if (typeof HandlerClass !== "function") continue;

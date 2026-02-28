@@ -105,7 +105,15 @@ export class AgeVerification {
       return this.generateWithMidnight(birthDate, minAge, currentDate, input.requesterDid);
     }
 
-    // Fall back to placeholder proof
+    // On mainnet, never fall back to placeholder proofs — this is a security gap.
+    // Placeholder proofs are only acceptable for development/testing networks.
+    if (this.config.network === "mainnet") {
+      throw new Error(
+        "Midnight network unavailable. Placeholder proofs are disabled on mainnet for security."
+      );
+    }
+
+    // Fall back to placeholder proof (non-mainnet only)
     return this.generatePlaceholder(birthDate, minAge, currentDate, input.requesterDid);
   }
 

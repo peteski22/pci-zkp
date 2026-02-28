@@ -17,3 +17,5 @@ export type {
   CredentialProofInput,
   CredentialProofOutput,
 } from "./types.js";
+
+export type { MidnightConfig, MidnightNetwork, ClientState } from "./midnight/client.js";

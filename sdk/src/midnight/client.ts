@@ -16,6 +16,14 @@ import {
 } from "@midnight-ntwrk/midnight-js-contracts";
 import type { FinalizedTxData } from "@midnight-ntwrk/midnight-js-types";
 
+/** Supported Midnight network targets. */
+export type MidnightNetwork =
+  | "standalone"
+  | "testnet"
+  | "preview"
+  | "preprod"
+  | "mainnet";
+
 export interface MidnightConfig {
   /** Proof server URL (default: http://localhost:6300) */
   proofServerUrl?: string;
@@ -24,7 +32,7 @@ export interface MidnightConfig {
   /** Node WebSocket URL (default: ws://localhost:9944) */
   nodeUrl?: string;
   /** Network type */
-  network?: "standalone" | "testnet";
+  network?: MidnightNetwork;
   /** Skip network check (for testing) */
   skipNetworkCheck?: boolean;
   /** Network check timeout in ms (default: 1000) */
@@ -225,7 +233,7 @@ export async function queryTransaction(
  */
 export interface ClientState {
   connected: boolean;
-  network: "standalone" | "testnet" | "mocked";
+  network: MidnightNetwork | "mocked";
   providers?: MidnightProviders;
   config?: MidnightConfig;
 }

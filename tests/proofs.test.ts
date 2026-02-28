@@ -445,3 +445,82 @@ describe("AgeVerification - verifyMidnightProof branches", () => {
     expect(isValid).toBe(true);
   });
 });
+
+describe("AgeVerification - mainnet fallback protection", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should throw error on mainnet when network is unavailable instead of falling back", async () => {
+    const verifier = new AgeVerification({
+      network: "mainnet",
+      skipNetworkCheck: true, // Forces offline
+    });
+
+    await expect(
+      verifier.generate({
+        birthDate: new Date("1990-01-15"),
+        minAge: 18,
+      })
+    ).rejects.toThrow("Placeholder proofs are disabled on mainnet");
+  });
+
+  it("should allow placeholder fallback on standalone network", async () => {
+    const verifier = new AgeVerification({
+      network: "standalone",
+      skipNetworkCheck: true,
+    });
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    expect(proof.publicSignals.network).toBe("mocked");
+    expect(proof.publicSignals.verified).toBe(true);
+  });
+
+  it("should allow placeholder fallback on preview network", async () => {
+    const verifier = new AgeVerification({
+      network: "preview",
+      skipNetworkCheck: true,
+    });
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    expect(proof.publicSignals.network).toBe("mocked");
+  });
+
+  it("should allow placeholder fallback on preprod network", async () => {
+    const verifier = new AgeVerification({
+      network: "preprod",
+      skipNetworkCheck: true,
+    });
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    expect(proof.publicSignals.network).toBe("mocked");
+  });
+});
+
+describe("MidnightNetwork type union", () => {
+  it("should accept all valid network types in MidnightConfig", () => {
+    const networks: Array<client.ClientState["network"]> = [
+      "standalone",
+      "testnet",
+      "preview",
+      "preprod",
+      "mainnet",
+      "mocked",
+    ];
+
+    // Type-level check: all values are assignable to the union
+    expect(networks).toHaveLength(6);
+  });
+});
