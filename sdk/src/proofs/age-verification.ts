@@ -18,8 +18,12 @@ import {
   queryTransaction,
   type MidnightConfig,
 } from "../midnight/client.js";
-// TODO(#7): Re-import when full deployment flow is wired up
-// import { createAgeWitnesses, parseDateForCircuit } from "../midnight/witnesses.js";
+import {
+  getOrCreateWallet,
+  resolveContractAssetsPath,
+  deployAndVerifyAge,
+  type WalletConfig,
+} from "../midnight/index.js";
 
 export class AgeVerification {
   private initialized = false;
@@ -123,24 +127,91 @@ export class AgeVerification {
   /**
    * Generate proof using real Midnight network.
    *
-   * Not yet implemented — requires full wallet + contract deployment flow.
-   * See https://github.com/peteski22/pci-zkp/issues/7 for the roadmap:
-   * 1. Deploy a fresh ephemeral contract (privacy: no cross-verifier linkability)
-   * 2. Set private state (birth date) via witnesses
-   * 3. Call contract.callTx.verifyAge() — auto-generates ZK proof
-   * 4. Extract txId, blockHeight, contractAddress from finalized tx
-   * 5. Return OnChainProof with real on-chain metadata
+   * 1. Creates/reuses an HD wallet singleton
+   * 2. Waits for wallet sync
+   * 3. Deploys a fresh ephemeral contract (privacy: no cross-verifier linkability)
+   * 4. Calls verifyAge circuit — auto-generates ZK proof, submits tx
+   * 5. Returns OnChainProof with real on-chain metadata
    */
   private async generateWithMidnight(
-    _birthDate: Date,
-    _minAge: number,
-    _currentDate: Date,
-    _requesterDid?: string
+    birthDate: Date,
+    minAge: number,
+    currentDate: Date,
+    requesterDid?: string
   ): Promise<Proof> {
-    throw new Error(
-      "On-chain proof generation requires full Midnight deployment (see issue #7). " +
-        "Use offline mode for now."
+    const walletConfig = this.buildWalletConfig();
+    const wallet = await getOrCreateWallet(walletConfig);
+    await wallet.waitForSync(30_000);
+
+    const assetsPath = resolveContractAssetsPath(this.config.contractAssetsPath);
+
+    const result = await deployAndVerifyAge(
+      wallet,
+      walletConfig,
+      birthDate,
+      minAge,
+      currentDate,
+      assetsPath,
     );
+
+    // Chain-verifiable: verified flag is read from on-chain contract state.
+    // Self-reported: minAge, requesterDid, network are caller-supplied metadata —
+    // they are NOT verified on-chain. Consumers must not trust these fields for
+    // security decisions. Binding minAge/requesterDid into the circuit's disclosed
+    // state requires a contract change (tracked separately).
+    const publicSignals: Record<string, unknown> = {
+      verified: result.verified,
+      minAge,
+      network: this.config.network ?? "standalone",
+    };
+
+    if (requesterDid) {
+      publicSignals.requesterDid = requesterDid;
+    }
+
+    return {
+      verificationMethod: "on-chain",
+      proof: result.txId,
+      publicSignals,
+      verificationKey: "age_verification_vk_midnight",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+      txId: result.txId,
+      contractAddress: result.contractAddress,
+      blockHeight: result.blockHeight,
+    };
+  }
+
+  /**
+   * Build a WalletConfig from the current MidnightConfig.
+   */
+  private buildWalletConfig(): WalletConfig {
+    const indexerUrl = this.config.indexerUrl ?? "http://localhost:8088";
+
+    // Derive WebSocket URL from HTTP URL
+    const indexerBase = new URL(indexerUrl);
+    const wsBase = new URL(indexerUrl);
+    wsBase.protocol = indexerBase.protocol === "https:" ? "wss:" : "ws:";
+
+    const normalisedPath = indexerBase.pathname.replace(/\/+$/, "");
+    const hasGraphqlPath = normalisedPath.endsWith("/api/v3/graphql");
+
+    const httpUrl = hasGraphqlPath
+      ? indexerBase.href
+      : new URL("api/v3/graphql", indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`).href;
+
+    const wsUrl = hasGraphqlPath
+      ? new URL(`${normalisedPath}/ws`, wsBase.origin).href
+      : new URL("api/v3/graphql/ws", wsBase.href.endsWith("/") ? wsBase.href : `${wsBase.href}/`).href;
+
+    return {
+      seed: this.config.walletSeed,
+      network: this.config.network ?? "standalone",
+      indexerUrl: httpUrl,
+      indexerWsUrl: wsUrl,
+      nodeUrl: this.config.nodeUrl ?? "ws://localhost:9944",
+      proofServerUrl: this.config.proofServerUrl ?? "http://localhost:6300",
+    };
   }
 
   /**
@@ -308,6 +379,4 @@ export class AgeVerification {
     ).toString("base64");
   }
 
-  // TODO(#7): generateMidnightProofData() removed — will be replaced by
-  // real on-chain proof extraction when full deployment flow is wired up.
 }

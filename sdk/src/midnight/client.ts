@@ -39,6 +39,8 @@ export interface MidnightConfig {
   networkCheckTimeoutMs?: number;
   /** Path to compiled contract assets (managed/ directory) */
   contractAssetsPath?: string;
+  /** Hex-encoded wallet seed for HD key derivation */
+  walletSeed?: string;
 }
 
 export interface MidnightProviders {
@@ -53,6 +55,7 @@ const DEFAULT_CONFIG: Required<MidnightConfig> = {
   forceOffline: false,
   networkCheckTimeoutMs: 1000,
   contractAssetsPath: "",
+  walletSeed: "",
 };
 
 /**

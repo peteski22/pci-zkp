@@ -23,3 +23,5 @@ export type {
 export { isOnChainProof } from "./types.js";
 
 export type { MidnightConfig, MidnightNetwork, ClientState } from "./midnight/client.js";
+export type { WalletConfig, ManagedWallet, DerivedKeys } from "./midnight/wallet.js";
+export type { DeploymentResult } from "./midnight/contract-deployer.js";
