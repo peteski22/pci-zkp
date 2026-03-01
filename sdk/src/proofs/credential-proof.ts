@@ -8,6 +8,7 @@ import type {
   CredentialProofInput,
   CredentialProofOutput,
 } from "../types.js";
+import { isOnChainProof } from "../types.js";
 
 export class CredentialProof {
   constructor(private readonly _config: ProofConfig) {
@@ -35,6 +36,7 @@ export class CredentialProof {
 
     // TODO: Integrate with Midnight SDK for actual ZKP generation
     const proof: Proof = {
+      verificationMethod: "offline",
       proof: this.generatePlaceholderProof(),
       publicSignals: {
         valid,
@@ -79,10 +81,12 @@ export class CredentialProof {
       return false;
     }
 
-    // If proof has any on-chain metadata, it needs indexer verification.
-    // Not yet implemented for credential proofs, so treat as unverifiable.
-    if (proof.txId || proof.contractAddress) {
-      return false;
+    // If proof has on-chain metadata, it needs indexer verification.
+    // Not yet implemented for credential proofs.
+    if (isOnChainProof(proof)) {
+      throw new Error(
+        "On-chain verification for credential proofs is not yet implemented."
+      );
     }
 
     return true;

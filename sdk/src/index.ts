@@ -11,11 +11,15 @@ export { CredentialProof } from "./proofs/credential-proof.js";
 // Types
 export type {
   Proof,
+  OfflineProof,
+  OnChainProof,
   ProofConfig,
   AgeProofInput,
   AgeProofOutput,
   CredentialProofInput,
   CredentialProofOutput,
 } from "./types.js";
+
+export { isOnChainProof } from "./types.js";
 
 export type { MidnightConfig, MidnightNetwork, ClientState } from "./midnight/client.js";

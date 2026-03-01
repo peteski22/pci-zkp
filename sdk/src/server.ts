@@ -12,6 +12,22 @@ import * as proofModules from "./proofs/index.js";
 
 const PORT = parseInt(process.env.PORT || "8084", 10);
 
+const VALID_NETWORKS: readonly MidnightNetwork[] = [
+  "standalone",
+  "testnet",
+  "preview",
+  "preprod",
+  "mainnet",
+];
+
+function parseMidnightNetwork(raw: string | undefined): MidnightNetwork | undefined {
+  if (!raw) return undefined;
+  if ((VALID_NETWORKS as readonly string[]).includes(raw)) return raw as MidnightNetwork;
+  throw new Error(
+    `Invalid MIDNIGHT_NETWORK '${raw}'. Must be one of: ${VALID_NETWORKS.join(", ")}`
+  );
+}
+
 interface ProofHandler {
   generate(input: unknown): Promise<unknown>;
 }
@@ -27,7 +43,7 @@ const proofHandlers: Record<string, ProofHandler> = {};
  * can connect to the correct node, indexer, and proof server.
  */
 function loadProofHandlers(): void {
-  const network = (process.env.MIDNIGHT_NETWORK as MidnightNetwork | undefined) ?? undefined;
+  const network = parseMidnightNetwork(process.env.MIDNIGHT_NETWORK);
 
   const config: ProofConfig & MidnightConfig = {
     proverEndpoint: process.env.PROOF_SERVER_URL,

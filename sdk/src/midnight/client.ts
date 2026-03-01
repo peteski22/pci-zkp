@@ -33,8 +33,8 @@ export interface MidnightConfig {
   nodeUrl?: string;
   /** Network type */
   network?: MidnightNetwork;
-  /** Skip network check (for testing) */
-  skipNetworkCheck?: boolean;
+  /** Force offline mode — network will not be checked; proofs use placeholders */
+  forceOffline?: boolean;
   /** Network check timeout in ms (default: 1000) */
   networkCheckTimeoutMs?: number;
   /** Path to compiled contract assets (managed/ directory) */
@@ -50,7 +50,7 @@ const DEFAULT_CONFIG: Required<MidnightConfig> = {
   indexerUrl: "http://localhost:8088",
   nodeUrl: "ws://localhost:9944",
   network: "standalone",
-  skipNetworkCheck: false,
+  forceOffline: false,
   networkCheckTimeoutMs: 1000,
   contractAssetsPath: "",
 };
@@ -98,7 +98,7 @@ export function createProviders(config: MidnightConfig = {}): MidnightProviders 
 export async function isNetworkAvailable(config: MidnightConfig = {}): Promise<boolean> {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
-  if (mergedConfig.skipNetworkCheck) {
+  if (mergedConfig.forceOffline) {
     return false;
   }
 
