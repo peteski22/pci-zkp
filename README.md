@@ -80,7 +80,7 @@ export circuit proveAgeOver(
 
 ### Prerequisites
 
-1. **Node.js 20+** and **pnpm**
+1. **Node.js 22+** and **pnpm**
 2. **Docker** and **Docker Compose** (for local Midnight network)
 3. **Compact Compiler** (Midnight's contract language)
 
@@ -91,13 +91,13 @@ export circuit proveAgeOver(
 curl -fsSL https://docs.midnight.network/install | bash
 
 # Install a specific version (must match pragma in .compact files)
-compact update 0.26.0
+compact update 0.28.0
 
 # Verify installation
-~/.compact/versions/0.26.0/x86_64-unknown-linux-musl/compactc.bin --version
+~/.compact/versions/0.28.0/x86_64-unknown-linux-musl/compactc.bin --version
 ```
 
-The Makefile expects `compactc.bin` to be in `~/.compact/versions/0.26.0/x86_64-unknown-linux-musl/`.
+The Makefile expects `compactc.bin` to be in `~/.compact/versions/0.28.0/x86_64-unknown-linux-musl/`.
 
 ### Makefile Commands
 
@@ -138,7 +138,7 @@ make status
 # Or manually:
 curl http://localhost:9944/health      # Node
 curl http://localhost:6300/health      # Proof server
-curl http://localhost:8088/api/v1/graphql  # Indexer
+curl http://localhost:8088/api/v3/graphql  # Indexer
 ```
 
 ## Related Packages

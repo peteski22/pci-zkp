@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ProofGenerator } from "../sdk/src/proofs/generator.js";
 import { AgeVerification } from "../sdk/src/proofs/age-verification.js";
-import type { Proof } from "../sdk/src/types.js";
+import type { Proof, OnChainProof } from "../sdk/src/types.js";
+import { isOnChainProof } from "../sdk/src/types.js";
 import * as client from "../sdk/src/midnight/client.js";
 
 describe("ProofGenerator", () => {
@@ -114,6 +115,7 @@ describe("ProofGenerator", () => {
 
     it("should reject credential proof with empty credentialType", async () => {
       const proof: Proof = {
+        verificationMethod: "offline",
         proof: "dGVzdA==",
         publicSignals: {
           valid: true,
@@ -131,6 +133,7 @@ describe("ProofGenerator", () => {
 
     it("should reject credential proof with empty issuerPublicKey", async () => {
       const proof: Proof = {
+        verificationMethod: "offline",
         proof: "dGVzdA==",
         publicSignals: {
           valid: true,
@@ -192,9 +195,10 @@ describe("AgeVerification", () => {
   });
 });
 
-describe("Proof type with on-chain fields", () => {
-  it("should accept proof with txId and contractAddress", () => {
+describe("Proof discriminated union", () => {
+  it("should accept on-chain proof with all required fields", () => {
     const proof: Proof = {
+      verificationMethod: "on-chain",
       proof: "dGVzdA==",
       publicSignals: { verified: true, minAge: 18 },
       verificationKey: "age_verification_vk_midnight",
@@ -205,13 +209,17 @@ describe("Proof type with on-chain fields", () => {
       blockHeight: 42,
     };
 
-    expect(proof.txId).toBe("abc123def456");
-    expect(proof.contractAddress).toBe("0x1234567890abcdef");
-    expect(proof.blockHeight).toBe(42);
+    expect(isOnChainProof(proof)).toBe(true);
+    if (isOnChainProof(proof)) {
+      expect(proof.txId).toBe("abc123def456");
+      expect(proof.contractAddress).toBe("0x1234567890abcdef");
+      expect(proof.blockHeight).toBe(42);
+    }
   });
 
-  it("should accept proof without on-chain fields (placeholder)", () => {
+  it("should accept offline proof without on-chain fields", () => {
     const proof: Proof = {
+      verificationMethod: "offline",
       proof: "dGVzdA==",
       publicSignals: { verified: true, minAge: 18 },
       verificationKey: "age_verification_vk_placeholder",
@@ -219,16 +227,14 @@ describe("Proof type with on-chain fields", () => {
       timestamp: new Date(),
     };
 
-    expect(proof.txId).toBeUndefined();
-    expect(proof.contractAddress).toBeUndefined();
-    expect(proof.blockHeight).toBeUndefined();
+    expect(isOnChainProof(proof)).toBe(false);
   });
 });
 
 describe("AgeVerification - Midnight mode verification", () => {
   it("should accept placeholder proofs in offline mode", async () => {
     const verifier = new AgeVerification({
-      skipNetworkCheck: true, // Forces offline — placeholder proofs are trusted
+      forceOffline: true, // Forces offline mode — placeholder proofs are trusted
     });
 
     // Generate an offline proof
@@ -247,6 +253,7 @@ describe("AgeVerification - Midnight mode verification", () => {
     const verifier = new AgeVerification({});
 
     const malformedProof: Proof = {
+      verificationMethod: "offline",
       proof: "dGVzdA==",
       publicSignals: { verified: "not-a-boolean", minAge: "not-a-number" },
       verificationKey: "test_vk",
@@ -301,8 +308,9 @@ describe("AgeVerification - Midnight mode verification", () => {
 
 describe("AgeVerification - verifyMidnightProof branches", () => {
   // Helper: build a valid on-chain proof for testing.
-  function makeOnChainProof(overrides: Partial<Proof> = {}): Proof {
+  function makeOnChainProof(overrides: Partial<OnChainProof> = {}): Proof {
     return {
+      verificationMethod: "on-chain" as const,
       proof: "dGVzdA==",
       publicSignals: { verified: true, minAge: 18 },
       verificationKey: "age_verification_vk_midnight",
@@ -329,21 +337,18 @@ describe("AgeVerification - verifyMidnightProof branches", () => {
     vi.restoreAllMocks();
   });
 
-  it("should reject proof without txId in Midnight mode", async () => {
+  it("should reject offline proof in Midnight mode", async () => {
     mockMidnightMode();
 
     const verifier = new AgeVerification({});
-    const proof = makeOnChainProof({ txId: undefined });
-
-    const isValid = await verifier.verify(proof);
-    expect(isValid).toBe(false);
-  });
-
-  it("should reject proof without contractAddress in Midnight mode", async () => {
-    mockMidnightMode();
-
-    const verifier = new AgeVerification({});
-    const proof = makeOnChainProof({ contractAddress: undefined });
+    const proof: Proof = {
+      verificationMethod: "offline",
+      proof: "dGVzdA==",
+      publicSignals: { verified: true, minAge: 18 },
+      verificationKey: "age_verification_vk_midnight",
+      circuitId: "age_verification",
+      timestamp: new Date(),
+    };
 
     const isValid = await verifier.verify(proof);
     expect(isValid).toBe(false);
@@ -433,15 +438,83 @@ describe("AgeVerification - verifyMidnightProof branches", () => {
     expect(isValid).toBe(true);
   });
 
-  it("should accept proof when blockHeight is not specified (skip height check)", async () => {
-    mockMidnightMode();
-    vi.spyOn(client, "queryContractState").mockResolvedValue({ verified: true });
-    vi.spyOn(client, "queryTransaction").mockResolvedValue({ blockHeight: 42 });
+});
 
-    const verifier = new AgeVerification({});
-    const proof = makeOnChainProof({ blockHeight: undefined });
+describe("AgeVerification - mainnet fallback protection", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
 
-    const isValid = await verifier.verify(proof);
-    expect(isValid).toBe(true);
+  it("should throw error on mainnet when network is unavailable instead of falling back", async () => {
+    const verifier = new AgeVerification({
+      network: "mainnet",
+      forceOffline: true, // Forces offline
+    });
+
+    await expect(
+      verifier.generate({
+        birthDate: new Date("1990-01-15"),
+        minAge: 18,
+      })
+    ).rejects.toThrow("Placeholder proofs are disabled on mainnet");
+  });
+
+  it("should allow placeholder fallback on standalone network", async () => {
+    const verifier = new AgeVerification({
+      network: "standalone",
+      forceOffline: true,
+    });
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    expect(proof.publicSignals.network).toBe("mocked");
+    expect(proof.publicSignals.verified).toBe(true);
+  });
+
+  it("should allow placeholder fallback on preview network", async () => {
+    const verifier = new AgeVerification({
+      network: "preview",
+      forceOffline: true,
+    });
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    expect(proof.publicSignals.network).toBe("mocked");
+  });
+
+  it("should allow placeholder fallback on preprod network", async () => {
+    const verifier = new AgeVerification({
+      network: "preprod",
+      forceOffline: true,
+    });
+
+    const proof = await verifier.generate({
+      birthDate: new Date("1990-01-15"),
+      minAge: 18,
+    });
+
+    expect(proof.publicSignals.network).toBe("mocked");
+  });
+});
+
+describe("MidnightNetwork type union", () => {
+  it("should accept all valid network types in MidnightConfig", () => {
+    const networks: Array<client.ClientState["network"]> = [
+      "standalone",
+      "testnet",
+      "preview",
+      "preprod",
+      "mainnet",
+      "mocked",
+    ];
+
+    // Type-level check: all values are assignable to the union
+    expect(networks).toHaveLength(6);
   });
 });

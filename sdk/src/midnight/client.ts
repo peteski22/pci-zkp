@@ -16,6 +16,14 @@ import {
 } from "@midnight-ntwrk/midnight-js-contracts";
 import type { FinalizedTxData } from "@midnight-ntwrk/midnight-js-types";
 
+/** Supported Midnight network targets. */
+export type MidnightNetwork =
+  | "standalone"
+  | "testnet"
+  | "preview"
+  | "preprod"
+  | "mainnet";
+
 export interface MidnightConfig {
   /** Proof server URL (default: http://localhost:6300) */
   proofServerUrl?: string;
@@ -24,9 +32,9 @@ export interface MidnightConfig {
   /** Node WebSocket URL (default: ws://localhost:9944) */
   nodeUrl?: string;
   /** Network type */
-  network?: "standalone" | "testnet";
-  /** Skip network check (for testing) */
-  skipNetworkCheck?: boolean;
+  network?: MidnightNetwork;
+  /** Force offline mode — network will not be checked; proofs use placeholders */
+  forceOffline?: boolean;
   /** Network check timeout in ms (default: 1000) */
   networkCheckTimeoutMs?: number;
   /** Path to compiled contract assets (managed/ directory) */
@@ -42,7 +50,7 @@ const DEFAULT_CONFIG: Required<MidnightConfig> = {
   indexerUrl: "http://localhost:8088",
   nodeUrl: "ws://localhost:9944",
   network: "standalone",
-  skipNetworkCheck: false,
+  forceOffline: false,
   networkCheckTimeoutMs: 1000,
   contractAssetsPath: "",
 };
@@ -90,7 +98,7 @@ export function createProviders(config: MidnightConfig = {}): MidnightProviders 
 export async function isNetworkAvailable(config: MidnightConfig = {}): Promise<boolean> {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
 
-  if (mergedConfig.skipNetworkCheck) {
+  if (mergedConfig.forceOffline) {
     return false;
   }
 
@@ -225,7 +233,7 @@ export async function queryTransaction(
  */
 export interface ClientState {
   connected: boolean;
-  network: "standalone" | "testnet" | "mocked";
+  network: MidnightNetwork | "mocked";
   providers?: MidnightProviders;
   config?: MidnightConfig;
 }

@@ -10,6 +10,7 @@
  */
 
 import type { Proof, ProofConfig, AgeProofInput } from "../types.js";
+import { isOnChainProof } from "../types.js";
 import {
   getClientState,
   initializeClient,
@@ -17,7 +18,8 @@ import {
   queryTransaction,
   type MidnightConfig,
 } from "../midnight/client.js";
-import { createAgeWitnesses, parseDateForCircuit } from "../midnight/witnesses.js";
+// TODO(#7): Re-import when full deployment flow is wired up
+// import { createAgeWitnesses, parseDateForCircuit } from "../midnight/witnesses.js";
 
 export class AgeVerification {
   private initialized = false;
@@ -82,6 +84,7 @@ export class AgeVerification {
 
     if (!birthDate || isNaN(birthDate.getTime())) {
       return {
+        verificationMethod: "offline",
         proof: "",
         publicSignals: { verified: false, error: "Invalid or missing birth date" },
         verificationKey: "",
@@ -105,74 +108,39 @@ export class AgeVerification {
       return this.generateWithMidnight(birthDate, minAge, currentDate, input.requesterDid);
     }
 
-    // Fall back to placeholder proof
+    // On mainnet, never fall back to placeholder proofs — this is a security gap.
+    // Placeholder proofs are only acceptable for development/testing networks.
+    if (this.config.network === "mainnet") {
+      throw new Error(
+        "Midnight network unavailable. Placeholder proofs are disabled on mainnet for security."
+      );
+    }
+
+    // Fall back to placeholder proof (non-mainnet only)
     return this.generatePlaceholder(birthDate, minAge, currentDate, input.requesterDid);
   }
 
   /**
    * Generate proof using real Midnight network.
    *
-   * Currently prepares circuit inputs and witnesses but returns a
-   * locally-computed result without deploying a contract or submitting
-   * a transaction. The returned proof will NOT contain txId,
-   * contractAddress, or blockHeight — verifyMidnightProof() will
-   * therefore reject it until full on-chain deployment is wired up.
-   *
-   * Target flow (see https://github.com/peteski22/pci-zkp/issues/7):
+   * Not yet implemented — requires full wallet + contract deployment flow.
+   * See https://github.com/peteski22/pci-zkp/issues/7 for the roadmap:
    * 1. Deploy a fresh ephemeral contract (privacy: no cross-verifier linkability)
    * 2. Set private state (birth date) via witnesses
    * 3. Call contract.callTx.verifyAge() — auto-generates ZK proof
    * 4. Extract txId, blockHeight, contractAddress from finalized tx
-   * 5. Return Proof with real on-chain metadata
+   * 5. Return OnChainProof with real on-chain metadata
    */
   private async generateWithMidnight(
-    birthDate: Date,
-    minAge: number,
-    currentDate: Date,
-    requesterDid?: string
+    _birthDate: Date,
+    _minAge: number,
+    _currentDate: Date,
+    _requesterDid?: string
   ): Promise<Proof> {
-    const clientState = getClientState();
-    if (!clientState.providers || !clientState.config) {
-      throw new Error("Midnight client not initialized");
-    }
-
-    // Prepare circuit inputs (used when full wallet + deployment flow is wired up).
-    // See https://github.com/peteski22/pci-zkp/issues/7 for the deployment roadmap.
-    const current = parseDateForCircuit(currentDate);
-    const witnesses = createAgeWitnesses(birthDate);
-    const circuitArgs = {
-      minAge: BigInt(minAge),
-      currentYear: current.year,
-      currentMonth: current.month,
-      currentDay: current.day,
-    };
-
-    void witnesses;
-    void circuitArgs;
-
-    // Calculate the expected result until full on-chain execution is wired up.
-    const verified = this.calculateAge(birthDate, currentDate) >= minAge;
-
-    const publicSignals: Record<string, unknown> = {
-      verified,
-      minAge,
-      network: "midnight",
-    };
-
-    if (requesterDid) {
-      publicSignals.requesterDid = requesterDid;
-    }
-
-    return {
-      proof: this.generateMidnightProofData(verified, minAge),
-      publicSignals,
-      verificationKey: "age_verification_vk_midnight",
-      circuitId: "age_verification",
-      timestamp: new Date(),
-      // txId, contractAddress, blockHeight will be populated when full
-      // wallet + deployment flow is wired up. Verification checks for
-      // these fields to distinguish on-chain proofs from pending ones.
-    };
+    throw new Error(
+      "On-chain proof generation requires full Midnight deployment (see issue #7). " +
+        "Use offline mode for now."
+    );
   }
 
   /**
@@ -200,6 +168,7 @@ export class AgeVerification {
     }
 
     return {
+      verificationMethod: "offline",
       proof: this.generatePlaceholderProofData(),
       publicSignals,
       verificationKey: "age_verification_vk_placeholder",
@@ -257,6 +226,12 @@ export class AgeVerification {
       return this.verifyMidnightProof(proof);
     }
 
+    // On mainnet, reject placeholder proofs in the verify path too —
+    // they should never be accepted in a production environment.
+    if (this.config.network === "mainnet") {
+      return false;
+    }
+
     // Placeholder proofs are trusted only in offline/test mode
     return true;
   }
@@ -265,19 +240,25 @@ export class AgeVerification {
    * Verify a Midnight-generated proof via on-chain data
    *
    * Verification strategy (Midnight has no off-chain verification API):
-   * 1. Require txId and contractAddress (on-chain metadata)
+   * 1. Require on-chain proof (verificationMethod === "on-chain")
    * 2. Query the contract state from the indexer to read the `verified` field
    * 3. Confirm the transaction exists on-chain at the claimed block height
    *
-   * Proofs without txId/contractAddress are rejected — they lack the on-chain
-   * record needed for cryptographic verification.
+   * SECURITY NOTE: The indexer does not currently expose which contract a
+   * transaction targets, so we verify tx existence and contract state
+   * independently. This is acceptable because each contract is ephemeral
+   * (single-use, deployed per proof interaction). An attacker who deploys
+   * their own contract can only set `verified=true` on their own instance —
+   * the contractAddress in the proof binds to the specific instance.
+   * A future indexer API upgrade should allow binding txId → contractAddress.
+   *
+   * Offline proofs are rejected — they lack the on-chain record needed for
+   * cryptographic verification.
    */
   private async verifyMidnightProof(proof: Proof): Promise<boolean> {
     // Require on-chain metadata for verification
-    if (!proof.txId || !proof.contractAddress) {
-      // No on-chain metadata — cannot verify. This happens when proof generation
-      // used the Midnight network marker but didn't complete full deployment.
-      // Reject rather than blindly trusting.
+    if (!isOnChainProof(proof)) {
+      // Offline proof — cannot verify via on-chain data.
       return false;
     }
 
@@ -303,19 +284,14 @@ export class AgeVerification {
       return false;
     }
 
-    // 3. Confirm the transaction exists on-chain.
-    // Note: the indexer does not currently expose which contract a
-    // transaction targets, so we cannot verify tx-contract association.
-    // This is acceptable for now because each contract is ephemeral
-    // (single-use), but a future indexer API upgrade should allow
-    // binding the txId to the contractAddress.
+    // 3. Confirm the transaction exists on-chain (see SECURITY NOTE above).
     const txResult = await queryTransaction(indexerUrl, proof.txId);
     if (!txResult) {
       return false;
     }
 
-    // 4. If proof claims a specific block height, verify it matches.
-    if (proof.blockHeight !== undefined && txResult.blockHeight !== proof.blockHeight) {
+    // 4. Verify block height matches.
+    if (txResult.blockHeight !== proof.blockHeight) {
       return false;
     }
 
@@ -332,15 +308,6 @@ export class AgeVerification {
     ).toString("base64");
   }
 
-  private generateMidnightProofData(verified: boolean, minAge: number): string {
-    return Buffer.from(
-      JSON.stringify({
-        type: "age_verification",
-        version: "2.0",
-        network: "midnight",
-        verified,
-        minAge,
-      })
-    ).toString("base64");
-  }
+  // TODO(#7): generateMidnightProofData() removed — will be replaced by
+  // real on-chain proof extraction when full deployment flow is wired up.
 }

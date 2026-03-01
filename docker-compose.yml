@@ -20,8 +20,8 @@ services:
       start_period: 40s
 
   # Proof server - generates ZK proofs locally.
-  # Note: official midnightnetwork image uses its own versioning (4.0.0),
-  # which is compatible with the Ledger v7 / midnight-js 3.0.0 stack.
+  # Note: proof-server is still published under midnightnetwork/ (not midnightntwrk/)
+  # as of SDK 3.0.0. Uses its own versioning (4.0.0), compatible with Ledger v7.
   proof-server:
     image: midnightnetwork/proof-server:4.0.0
     ports:

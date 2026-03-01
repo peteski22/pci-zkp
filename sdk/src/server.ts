@@ -7,9 +7,26 @@
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import type { ProofConfig } from "./types.js";
+import type { MidnightConfig, MidnightNetwork } from "./midnight/client.js";
 import * as proofModules from "./proofs/index.js";
 
 const PORT = parseInt(process.env.PORT || "8084", 10);
+
+const VALID_NETWORKS = [
+  "standalone",
+  "testnet",
+  "preview",
+  "preprod",
+  "mainnet",
+] as const satisfies readonly MidnightNetwork[];
+
+function parseMidnightNetwork(raw: string | undefined): MidnightNetwork | undefined {
+  if (!raw) return undefined;
+  if ((VALID_NETWORKS as readonly string[]).includes(raw)) return raw as MidnightNetwork;
+  throw new Error(
+    `Invalid MIDNIGHT_NETWORK '${raw}'. Must be one of: ${VALID_NETWORKS.join(", ")}`
+  );
+}
 
 interface ProofHandler {
   generate(input: unknown): Promise<unknown>;
@@ -19,10 +36,24 @@ interface ProofHandler {
 const proofHandlers: Record<string, ProofHandler> = {};
 
 /**
- * Load all proof handlers from the barrel export
+ * Load all proof handlers from the barrel export.
+ *
+ * Reads Midnight network configuration from environment variables and
+ * passes it through to each proof handler constructor so that handlers
+ * can connect to the correct node, indexer, and proof server.
  */
 function loadProofHandlers(): void {
-  const config: ProofConfig = { proverEndpoint: process.env.PROOF_SERVER_URL };
+  const network = parseMidnightNetwork(process.env.MIDNIGHT_NETWORK);
+
+  const config: ProofConfig & MidnightConfig = {
+    ...(process.env.PROOF_SERVER_URL && { proverEndpoint: process.env.PROOF_SERVER_URL }),
+    ...(( process.env.MIDNIGHT_PROOF_SERVER_URL || process.env.PROOF_SERVER_URL) && {
+      proofServerUrl: process.env.MIDNIGHT_PROOF_SERVER_URL ?? process.env.PROOF_SERVER_URL,
+    }),
+    ...(process.env.MIDNIGHT_NODE_URL && { nodeUrl: process.env.MIDNIGHT_NODE_URL }),
+    ...(process.env.MIDNIGHT_INDEXER_URL && { indexerUrl: process.env.MIDNIGHT_INDEXER_URL }),
+    ...(network && { network }),
+  };
 
   for (const [name, HandlerClass] of Object.entries(proofModules)) {
     if (typeof HandlerClass !== "function") continue;

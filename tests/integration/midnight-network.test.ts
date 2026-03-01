@@ -14,6 +14,9 @@ import { isNetworkAvailable, initializeClient, getClientState } from "../../sdk/
 const PROOF_SERVER_URL = process.env.MIDNIGHT_PROOF_SERVER_URL || "http://localhost:6300";
 const INDEXER_URL = process.env.MIDNIGHT_INDEXER_URL || "http://localhost:8088";
 
+/** Shared matcher for the "not yet implemented" error thrown by on-chain proof generation. */
+const NOT_IMPLEMENTED_RE = /issue #7/;
+
 describe("Midnight Network Integration", () => {
   let isNetworkUp = false;
 
@@ -77,7 +80,7 @@ describe("Midnight Network Integration", () => {
   });
 
   describe("Age Verification with Network", () => {
-    it("should generate proof using Midnight network", async () => {
+    it("should throw when generating proof with Midnight (not yet implemented)", async () => {
       if (!isNetworkUp) {
         console.log("Skipping: Network not available");
         return;
@@ -88,62 +91,15 @@ describe("Midnight Network Integration", () => {
         indexerUrl: INDEXER_URL,
       });
 
-      const proof = await verifier.generate({
-        birthDate: new Date("1990-01-15"),
-        minAge: 18,
-      });
-
-      expect(proof.circuitId).toBe("age_verification");
-      expect(proof.publicSignals.verified).toBe(true);
-      expect(proof.publicSignals.minAge).toBe(18);
-      expect(proof.publicSignals.network).toBe("midnight");
-    });
-
-    it("should verify proof generated with Midnight", async () => {
-      if (!isNetworkUp) {
-        console.log("Skipping: Network not available");
-        return;
-      }
-
-      const verifier = new AgeVerification({
-        proofServerUrl: PROOF_SERVER_URL,
-        indexerUrl: INDEXER_URL,
-      });
-
-      const proof = await verifier.generate({
-        birthDate: new Date("1990-01-15"),
-        minAge: 21,
-      });
-
-      // Until full wallet + deployment flow is wired, Midnight proofs
-      // lack on-chain metadata (txId/contractAddress), so verify() will
-      // reject them. This is the correct security behavior.
-      const isValid = await verifier.verify(proof);
-      // Proofs without on-chain metadata are rejected in Midnight mode
-      expect(isValid).toBe(false);
-    });
-
-    it("should correctly reject underage proof", async () => {
-      if (!isNetworkUp) {
-        console.log("Skipping: Network not available");
-        return;
-      }
-
-      const verifier = new AgeVerification({
-        proofServerUrl: PROOF_SERVER_URL,
-        indexerUrl: INDEXER_URL,
-      });
-
-      // Create a birth date that will always be under 18 (10 years ago)
-      const now = new Date();
-      const underageBirthDate = new Date(now.getFullYear() - 10, 0, 15);
-
-      const proof = await verifier.generate({
-        birthDate: underageBirthDate,
-        minAge: 18,
-      });
-
-      expect(proof.publicSignals.verified).toBe(false);
+      // On-chain proof generation is not yet implemented (see issue #7).
+      // When the network is available, generate() should throw rather than
+      // returning a proof that cannot be verified.
+      await expect(
+        verifier.generate({
+          birthDate: new Date("1990-01-15"),
+          minAge: 18,
+        })
+      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
     });
   });
 
@@ -162,14 +118,13 @@ describe("Midnight Network Integration", () => {
       expect(proof.circuitId).toBe("age_verification");
       expect(proof.publicSignals.verified).toBe(true);
       expect(proof.publicSignals.network).toBe("mocked");
-      // Placeholder proofs don't have on-chain metadata
-      expect(proof.txId).toBeUndefined();
-      expect(proof.contractAddress).toBeUndefined();
+      // Placeholder proofs are offline
+      expect(proof.verificationMethod).toBe("offline");
     });
 
     it("should skip network check when configured", async () => {
       const verifier = new AgeVerification({
-        skipNetworkCheck: true,
+        forceOffline: true,
       });
 
       const proof = await verifier.generate({
@@ -182,7 +137,7 @@ describe("Midnight Network Integration", () => {
   });
 
   describe("Ephemeral Contract Privacy", () => {
-    it("should generate different proofs for same input (no state sharing)", async () => {
+    it("should throw for both verifiers (on-chain not yet implemented)", async () => {
       if (!isNetworkUp) {
         console.log("Skipping: Network not available");
         return;
@@ -198,25 +153,15 @@ describe("Midnight Network Integration", () => {
         indexerUrl: INDEXER_URL,
       });
 
-      const proof1 = await verifier1.generate({
-        birthDate: new Date("1990-01-15"),
-        minAge: 18,
-      });
+      // Both should throw — on-chain generation not yet implemented.
+      // TODO(#7): Once full deployment is wired, assert different contractAddresses.
+      await expect(
+        verifier1.generate({ birthDate: new Date("1990-01-15"), minAge: 18 })
+      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
 
-      const proof2 = await verifier2.generate({
-        birthDate: new Date("1990-01-15"),
-        minAge: 18,
-      });
-
-      // Both should be valid
-      expect(proof1.publicSignals.verified).toBe(true);
-      expect(proof2.publicSignals.verified).toBe(true);
-
-      // Verify they are structurally independent proof instances.
-      // TODO: Once full deployment is wired, assert different contractAddresses here.
-      expect(proof1.proof).toBeDefined();
-      expect(proof2.proof).toBeDefined();
-      expect(proof1.verificationKey).toBe(proof2.verificationKey);
+      await expect(
+        verifier2.generate({ birthDate: new Date("1990-01-15"), minAge: 18 })
+      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
     });
   });
 });

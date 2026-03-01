@@ -2,7 +2,7 @@
  * Type definitions for PCI ZKP SDK
  */
 
-export interface Proof {
+interface ProofBase {
   /** Serialized proof data */
   proof: string;
   /** Public signals/outputs */
@@ -13,12 +13,29 @@ export interface Proof {
   circuitId: string;
   /** Generation timestamp */
   timestamp: Date;
-  /** Midnight transaction ID (present when proof was submitted on-chain) */
-  txId?: string;
+}
+
+/** Proof generated offline or via placeholder — no on-chain metadata. */
+export interface OfflineProof extends ProofBase {
+  verificationMethod: "offline";
+}
+
+/** Proof verified on-chain — contains transaction and contract metadata. */
+export interface OnChainProof extends ProofBase {
+  verificationMethod: "on-chain";
+  /** Midnight transaction ID */
+  txId: string;
   /** Contract address for this specific proof interaction */
-  contractAddress?: string;
+  contractAddress: string;
   /** Block height where proof was confirmed */
-  blockHeight?: number;
+  blockHeight: number;
+}
+
+export type Proof = OfflineProof | OnChainProof;
+
+/** Type guard: is this an on-chain proof? */
+export function isOnChainProof(p: Proof): p is OnChainProof {
+  return p.verificationMethod === "on-chain";
 }
 
 export interface ProofConfig {
