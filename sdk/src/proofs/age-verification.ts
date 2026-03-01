@@ -154,6 +154,11 @@ export class AgeVerification {
       assetsPath,
     );
 
+    // Chain-verifiable: verified flag is read from on-chain contract state.
+    // Self-reported: minAge, requesterDid, network are caller-supplied metadata —
+    // they are NOT verified on-chain. Consumers must not trust these fields for
+    // security decisions. Binding minAge/requesterDid into the circuit's disclosed
+    // state requires a contract change (tracked separately).
     const publicSignals: Record<string, unknown> = {
       verified: result.verified,
       minAge,
