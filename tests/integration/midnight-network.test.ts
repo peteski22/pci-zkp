@@ -8,14 +8,27 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { AgeVerification } from "../../sdk/src/proofs/age-verification.js";
 import { isNetworkAvailable, initializeClient, getClientState } from "../../sdk/src/midnight/client.js";
+import { isOnChainProof } from "../../sdk/src/types.js";
 
 const PROOF_SERVER_URL = process.env.MIDNIGHT_PROOF_SERVER_URL || "http://localhost:6300";
 const INDEXER_URL = process.env.MIDNIGHT_INDEXER_URL || "http://localhost:8088";
 
-/** Shared matcher for the "not yet implemented" error thrown by on-chain proof generation. */
-const NOT_IMPLEMENTED_RE = /issue #7/;
+/** Path to compiled contract assets — only exists if compactc has been run. */
+const CONTRACT_ASSETS_PATH = resolve(
+  new URL(import.meta.url).pathname,
+  "..",
+  "..",
+  "..",
+  "contract",
+  "src",
+  "managed",
+  "proofs",
+);
+const hasContractAssets = existsSync(CONTRACT_ASSETS_PATH);
 
 describe("Midnight Network Integration", () => {
   let isNetworkUp = false;
@@ -80,7 +93,7 @@ describe("Midnight Network Integration", () => {
   });
 
   describe("Age Verification with Network", () => {
-    it("should throw when generating proof with Midnight (not yet implemented)", async () => {
+    it("should attempt on-chain proof when network is available", async () => {
       if (!isNetworkUp) {
         console.log("Skipping: Network not available");
         return;
@@ -91,15 +104,30 @@ describe("Midnight Network Integration", () => {
         indexerUrl: INDEXER_URL,
       });
 
-      // On-chain proof generation is not yet implemented (see issue #7).
-      // When the network is available, generate() should throw rather than
-      // returning a proof that cannot be verified.
-      await expect(
-        verifier.generate({
+      if (!hasContractAssets) {
+        // Without compiled contract assets, should throw about missing assets
+        await expect(
+          verifier.generate({
+            birthDate: new Date("1990-01-15"),
+            minAge: 18,
+          })
+        ).rejects.toThrow(/Compact contract must be compiled|Contract assets not found/);
+      } else {
+        // With compiled contract assets, should return an on-chain proof
+        const proof = await verifier.generate({
           birthDate: new Date("1990-01-15"),
           minAge: 18,
-        })
-      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
+        });
+
+        expect(proof.circuitId).toBe("age_verification");
+        expect(isOnChainProof(proof)).toBe(true);
+        if (isOnChainProof(proof)) {
+          expect(proof.txId).toBeDefined();
+          expect(proof.contractAddress).toBeDefined();
+          expect(proof.blockHeight).toBeGreaterThan(0);
+          expect(proof.publicSignals.verified).toBe(true);
+        }
+      }
     });
   });
 
@@ -137,9 +165,9 @@ describe("Midnight Network Integration", () => {
   });
 
   describe("Ephemeral Contract Privacy", () => {
-    it("should throw for both verifiers (on-chain not yet implemented)", async () => {
-      if (!isNetworkUp) {
-        console.log("Skipping: Network not available");
+    it("should use different contract addresses for different verifiers", async () => {
+      if (!isNetworkUp || !hasContractAssets) {
+        console.log("Skipping: Requires network + compiled contract assets");
         return;
       }
 
@@ -153,15 +181,20 @@ describe("Midnight Network Integration", () => {
         indexerUrl: INDEXER_URL,
       });
 
-      // Both should throw — on-chain generation not yet implemented.
-      // TODO(#7): Once full deployment is wired, assert different contractAddresses.
-      await expect(
-        verifier1.generate({ birthDate: new Date("1990-01-15"), minAge: 18 })
-      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
+      const proof1 = await verifier1.generate({
+        birthDate: new Date("1990-01-15"),
+        minAge: 18,
+      });
 
-      await expect(
-        verifier2.generate({ birthDate: new Date("1990-01-15"), minAge: 18 })
-      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
+      const proof2 = await verifier2.generate({
+        birthDate: new Date("1990-01-15"),
+        minAge: 18,
+      });
+
+      // Each proof deploys a fresh ephemeral contract — addresses must differ
+      if (isOnChainProof(proof1) && isOnChainProof(proof2)) {
+        expect(proof1.contractAddress).not.toBe(proof2.contractAddress);
+      }
     });
   });
 });

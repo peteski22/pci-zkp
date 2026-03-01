@@ -53,6 +53,7 @@ function loadProofHandlers(): void {
     ...(process.env.MIDNIGHT_NODE_URL && { nodeUrl: process.env.MIDNIGHT_NODE_URL }),
     ...(process.env.MIDNIGHT_INDEXER_URL && { indexerUrl: process.env.MIDNIGHT_INDEXER_URL }),
     ...(network && { network }),
+    ...(process.env.MIDNIGHT_WALLET_SEED && { walletSeed: process.env.MIDNIGHT_WALLET_SEED }),
   };
 
   for (const [name, HandlerClass] of Object.entries(proofModules)) {
