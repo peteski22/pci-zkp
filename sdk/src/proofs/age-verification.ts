@@ -188,8 +188,16 @@ export class AgeVerification {
     const wsBase = new URL(indexerUrl);
     wsBase.protocol = indexerBase.protocol === "https:" ? "wss:" : "ws:";
 
-    const httpUrl = new URL("api/v3/graphql", indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`).href;
-    const wsUrl = new URL("api/v3/graphql/ws", wsBase.href.endsWith("/") ? wsBase.href : `${wsBase.href}/`).href;
+    const normalisedPath = indexerBase.pathname.replace(/\/+$/, "");
+    const hasGraphqlPath = normalisedPath.endsWith("/api/v3/graphql");
+
+    const httpUrl = hasGraphqlPath
+      ? indexerBase.href
+      : new URL("api/v3/graphql", indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`).href;
+
+    const wsUrl = hasGraphqlPath
+      ? new URL(`${normalisedPath}/ws`, wsBase.origin).href
+      : new URL("api/v3/graphql/ws", wsBase.href.endsWith("/") ? wsBase.href : `${wsBase.href}/`).href;
 
     return {
       seed: this.config.walletSeed,

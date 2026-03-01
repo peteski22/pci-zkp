@@ -369,38 +369,46 @@ export async function createWallet(config: WalletConfig): Promise<ManagedWallet>
   const dustWallet = DustWallet(buildDustConfig(config))
     .startWithSecretKey(dustSecretKey, LedgerParameters.initialParameters().dust);
 
-  // Create facade and start
+  // Create facade and start — wrap in try/catch to clean up on failure
   const facade = new WalletFacade(shieldedWallet, unshieldedWallet, dustWallet);
-  await facade.start(zswapSecretKeys, dustSecretKey);
 
-  // Get addresses
-  const shieldedAddr = await shieldedWallet.getAddress();
-  const unshieldedAddr = await unshieldedWallet.getAddress();
+  try {
+    await facade.start(zswapSecretKeys, dustSecretKey);
 
-  return {
-    facade,
-    zswapSecretKeys,
-    dustSecretKey,
-    unshieldedKeystore,
-    shieldedAddress: shieldedAddr.coinPublicKeyString(),
-    unshieldedAddress: unshieldedAddr.hexString,
+    // Get addresses
+    const shieldedAddr = await shieldedWallet.getAddress();
+    const unshieldedAddr = await unshieldedWallet.getAddress();
 
-    async stop() {
-      await facade.stop();
-      zswapSecretKeys.clear();
-      dustSecretKey.clear();
-    },
+    return {
+      facade,
+      zswapSecretKeys,
+      dustSecretKey,
+      unshieldedKeystore,
+      shieldedAddress: shieldedAddr.coinPublicKeyString(),
+      unshieldedAddress: unshieldedAddr.hexString,
 
-    async waitForSync(timeoutMs = 60_000) {
-      await Rx.firstValueFrom(
-        facade.state().pipe(
-          Rx.throttleTime(2_000),
-          Rx.filter((state) => state.isSynced),
-          Rx.timeout(timeoutMs),
-        ),
-      );
-    },
-  };
+      async stop() {
+        await facade.stop();
+        zswapSecretKeys.clear();
+        dustSecretKey.clear();
+      },
+
+      async waitForSync(timeoutMs = 60_000) {
+        await Rx.firstValueFrom(
+          facade.state().pipe(
+            Rx.throttleTime(2_000),
+            Rx.filter((state) => state.isSynced),
+            Rx.timeout(timeoutMs),
+          ),
+        );
+      },
+    };
+  } catch (err) {
+    await facade.stop().catch(() => {});
+    zswapSecretKeys.clear();
+    dustSecretKey.clear();
+    throw err;
+  }
 }
 
 // Module-level singleton with pending-promise guard.
@@ -449,15 +457,17 @@ export async function getOrCreateWallet(config: WalletConfig): Promise<ManagedWa
  * Destroy the singleton wallet (for tests and cleanup).
  */
 export async function destroyWallet(): Promise<void> {
+  let alreadyStopped = false;
   if (walletPending) {
     try {
       const wallet = await walletPending;
       await wallet.stop();
+      alreadyStopped = true;
     } catch {
       // Ignore errors during cleanup
     }
   }
-  if (walletInstance) {
+  if (!alreadyStopped && walletInstance) {
     await walletInstance.stop();
   }
   walletInstance = null;

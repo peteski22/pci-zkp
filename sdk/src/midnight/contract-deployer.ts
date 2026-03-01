@@ -13,6 +13,7 @@
  * 6. Return DeploymentResult with txId, contractAddress, blockHeight
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -84,6 +85,10 @@ export async function deployAndVerifyAge(
   currentDate: Date,
   contractAssetsPath: string,
 ): Promise<DeploymentResult> {
+  if (!Number.isInteger(minAge) || minAge < 0) {
+    throw new RangeError("minAge must be a non-negative integer");
+  }
+
   // 1. Create wallet/midnight provider (bridges facade to midnight-js-contracts)
   const walletAndMidnightProvider = await createWalletAndMidnightProvider(wallet);
 
@@ -97,7 +102,7 @@ export async function deployAndVerifyAge(
 
   // Create witness functions that provide the private birth date to the ZK circuit.
   // The birth date never leaves the device — only the proof that age >= threshold.
-  const ageWitnesses = createAgeWitnesses(birthDate, { useUTC: true });
+  const ageWitnesses = createAgeWitnesses(birthDate);
 
   // The compiled contract types are fully dynamic (loaded at runtime from compactc output).
   // Type assertions are unavoidable — the contract module doesn't exist at compile time.
@@ -115,7 +120,7 @@ export async function deployAndVerifyAge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const providers: MidnightProviders<any, any, any> = {
     privateStateProvider: levelPrivateStateProvider({
-      privateStateStoreName: `pci-age-verification-${Date.now()}`,
+      privateStateStoreName: `pci-age-verification-${randomUUID()}`,
       walletProvider: walletAndMidnightProvider,
     }),
     publicDataProvider: indexerPublicDataProvider(config.indexerUrl, config.indexerWsUrl),
@@ -136,7 +141,7 @@ export async function deployAndVerifyAge(
   const contractAddress = deployed.deployTxData.public.contractAddress;
 
   // 6. Call verifyAge circuit
-  const { year, month, day } = parseDateForCircuit(currentDate, { useUTC: true });
+  const { year, month, day } = parseDateForCircuit(currentDate);
 
   // The callTx interface is dynamically typed from the compiled contract.
   // The circuit can return verified=false for underage users without throwing,

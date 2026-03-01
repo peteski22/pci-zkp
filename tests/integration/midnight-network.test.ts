@@ -192,6 +192,8 @@ describe("Midnight Network Integration", () => {
       });
 
       // Each proof deploys a fresh ephemeral contract — addresses must differ
+      expect(isOnChainProof(proof1)).toBe(true);
+      expect(isOnChainProof(proof2)).toBe(true);
       if (isOnChainProof(proof1) && isOnChainProof(proof2)) {
         expect(proof1.contractAddress).not.toBe(proof2.contractAddress);
       }
