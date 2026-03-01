@@ -14,6 +14,9 @@ import { isNetworkAvailable, initializeClient, getClientState } from "../../sdk/
 const PROOF_SERVER_URL = process.env.MIDNIGHT_PROOF_SERVER_URL || "http://localhost:6300";
 const INDEXER_URL = process.env.MIDNIGHT_INDEXER_URL || "http://localhost:8088";
 
+/** Shared matcher for the "not yet implemented" error thrown by on-chain proof generation. */
+const NOT_IMPLEMENTED_RE = /issue #7/;
+
 describe("Midnight Network Integration", () => {
   let isNetworkUp = false;
 
@@ -96,7 +99,7 @@ describe("Midnight Network Integration", () => {
           birthDate: new Date("1990-01-15"),
           minAge: 18,
         })
-      ).rejects.toThrow("issue #7");
+      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
     });
   });
 
@@ -154,11 +157,11 @@ describe("Midnight Network Integration", () => {
       // TODO(#7): Once full deployment is wired, assert different contractAddresses.
       await expect(
         verifier1.generate({ birthDate: new Date("1990-01-15"), minAge: 18 })
-      ).rejects.toThrow("issue #7");
+      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
 
       await expect(
         verifier2.generate({ birthDate: new Date("1990-01-15"), minAge: 18 })
-      ).rejects.toThrow("issue #7");
+      ).rejects.toThrow(NOT_IMPLEMENTED_RE);
     });
   });
 });

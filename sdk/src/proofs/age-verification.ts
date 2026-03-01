@@ -226,6 +226,12 @@ export class AgeVerification {
       return this.verifyMidnightProof(proof);
     }
 
+    // On mainnet, reject placeholder proofs in the verify path too —
+    // they should never be accepted in a production environment.
+    if (this.config.network === "mainnet") {
+      return false;
+    }
+
     // Placeholder proofs are trusted only in offline/test mode
     return true;
   }

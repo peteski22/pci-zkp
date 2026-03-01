@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ProofGenerator } from "../sdk/src/proofs/generator.js";
 import { AgeVerification } from "../sdk/src/proofs/age-verification.js";
-import type { Proof } from "../sdk/src/types.js";
+import type { Proof, OnChainProof } from "../sdk/src/types.js";
 import { isOnChainProof } from "../sdk/src/types.js";
 import * as client from "../sdk/src/midnight/client.js";
 
@@ -308,9 +308,9 @@ describe("AgeVerification - Midnight mode verification", () => {
 
 describe("AgeVerification - verifyMidnightProof branches", () => {
   // Helper: build a valid on-chain proof for testing.
-  function makeOnChainProof(overrides: Partial<Proof> = {}): Proof {
+  function makeOnChainProof(overrides: Partial<OnChainProof> = {}): Proof {
     return {
-      verificationMethod: "on-chain",
+      verificationMethod: "on-chain" as const,
       proof: "dGVzdA==",
       publicSignals: { verified: true, minAge: 18 },
       verificationKey: "age_verification_vk_midnight",
@@ -320,7 +320,7 @@ describe("AgeVerification - verifyMidnightProof branches", () => {
       contractAddress: "0xcontract",
       blockHeight: 10,
       ...overrides,
-    } as Proof;
+    };
   }
 
   // Force the verifier into Midnight mode via mocks.

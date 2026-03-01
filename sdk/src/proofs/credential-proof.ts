@@ -82,11 +82,10 @@ export class CredentialProof {
     }
 
     // If proof has on-chain metadata, it needs indexer verification.
-    // Not yet implemented for credential proofs.
+    // Not yet implemented for credential proofs — reject rather than throw
+    // so callers can rely on the Promise<boolean> contract.
     if (isOnChainProof(proof)) {
-      throw new Error(
-        "On-chain verification for credential proofs is not yet implemented."
-      );
+      return false;
     }
 
     return true;

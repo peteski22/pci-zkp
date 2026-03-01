@@ -12,13 +12,13 @@ import * as proofModules from "./proofs/index.js";
 
 const PORT = parseInt(process.env.PORT || "8084", 10);
 
-const VALID_NETWORKS: readonly MidnightNetwork[] = [
+const VALID_NETWORKS = [
   "standalone",
   "testnet",
   "preview",
   "preprod",
   "mainnet",
-];
+] as const satisfies readonly MidnightNetwork[];
 
 function parseMidnightNetwork(raw: string | undefined): MidnightNetwork | undefined {
   if (!raw) return undefined;
@@ -46,11 +46,13 @@ function loadProofHandlers(): void {
   const network = parseMidnightNetwork(process.env.MIDNIGHT_NETWORK);
 
   const config: ProofConfig & MidnightConfig = {
-    proverEndpoint: process.env.PROOF_SERVER_URL,
-    proofServerUrl: process.env.MIDNIGHT_PROOF_SERVER_URL ?? process.env.PROOF_SERVER_URL,
-    nodeUrl: process.env.MIDNIGHT_NODE_URL,
-    indexerUrl: process.env.MIDNIGHT_INDEXER_URL,
-    network,
+    ...(process.env.PROOF_SERVER_URL && { proverEndpoint: process.env.PROOF_SERVER_URL }),
+    ...(( process.env.MIDNIGHT_PROOF_SERVER_URL || process.env.PROOF_SERVER_URL) && {
+      proofServerUrl: process.env.MIDNIGHT_PROOF_SERVER_URL ?? process.env.PROOF_SERVER_URL,
+    }),
+    ...(process.env.MIDNIGHT_NODE_URL && { nodeUrl: process.env.MIDNIGHT_NODE_URL }),
+    ...(process.env.MIDNIGHT_INDEXER_URL && { indexerUrl: process.env.MIDNIGHT_INDEXER_URL }),
+    ...(network && { network }),
   };
 
   for (const [name, HandlerClass] of Object.entries(proofModules)) {
