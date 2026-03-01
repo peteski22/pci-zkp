@@ -9,7 +9,8 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AgeVerification } from "../../sdk/src/proofs/age-verification.js";
 import { isNetworkAvailable, initializeClient, getClientState } from "../../sdk/src/midnight/client.js";
 import { isOnChainProof } from "../../sdk/src/types.js";
@@ -19,8 +20,7 @@ const INDEXER_URL = process.env.MIDNIGHT_INDEXER_URL || "http://localhost:8088";
 
 /** Path to compiled contract assets — only exists if compactc has been run. */
 const CONTRACT_ASSETS_PATH = resolve(
-  new URL(import.meta.url).pathname,
-  "..",
+  dirname(fileURLToPath(import.meta.url)),
   "..",
   "..",
   "contract",

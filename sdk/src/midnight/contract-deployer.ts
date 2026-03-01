@@ -15,7 +15,7 @@
 
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { CompiledContract } from "@midnight-ntwrk/compact-js";
 import { deployContract } from "@midnight-ntwrk/midnight-js-contracts";
 import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
@@ -138,7 +138,9 @@ export async function deployAndVerifyAge(
   // 6. Call verifyAge circuit
   const { year, month, day } = parseDateForCircuit(currentDate, { useUTC: true });
 
-  // The callTx interface is dynamically typed from the compiled contract
+  // The callTx interface is dynamically typed from the compiled contract.
+  // The circuit can return verified=false for underage users without throwing,
+  // so we must read the actual on-chain state after the tx.
   const contract = deployed as unknown as {
     callTx: {
       verifyAge(
@@ -147,6 +149,7 @@ export async function deployAndVerifyAge(
         currentMonth: bigint,
         currentDay: bigint,
       ): Promise<{ txHash: string; blockHeight: number }>;
+      getVerified(): Promise<{ txHash: string; blockHeight: number; result: boolean }>;
     };
   };
 
@@ -157,11 +160,14 @@ export async function deployAndVerifyAge(
     day,
   );
 
+  // Read the actual verified state from the contract (the circuit sets it via disclose())
+  const verifiedResult = await contract.callTx.getVerified();
+
   return {
     txId: result.txHash,
     contractAddress: String(contractAddress),
     blockHeight: result.blockHeight,
-    verified: true, // If we got here without error, the proof was accepted
+    verified: verifiedResult.result,
   };
 }
 
@@ -181,13 +187,13 @@ async function loadContractModule(assetsPath: string): Promise<{
     // The assetsPath points to managed/proofs/, so the module is one level up.
     const modulePath = resolve(assetsPath, "..", "index.cjs");
     if (existsSync(modulePath)) {
-      return await import(modulePath);
+      return await import(pathToFileURL(modulePath).href);
     }
 
     // Try ESM variant
     const esmPath = resolve(assetsPath, "..", "index.js");
     if (existsSync(esmPath)) {
-      return await import(esmPath);
+      return await import(pathToFileURL(esmPath).href);
     }
 
     throw new Error(

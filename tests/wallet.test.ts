@@ -68,6 +68,18 @@ describe("Wallet - resolveSeed", () => {
     ).toThrow("Wallet seed must be a hex string");
   });
 
+  it("should throw on odd-length hex seed", () => {
+    expect(() =>
+      resolveSeed({ seed: "a".repeat(65), network: "standalone" })
+    ).toThrow("even number of hex characters");
+  });
+
+  it("should trim whitespace from seed", () => {
+    const seed = "a".repeat(64);
+    const result = resolveSeed({ seed: `  ${seed}  `, network: "standalone" });
+    expect(result).toBe(seed);
+  });
+
   it("should throw on too-short seed", () => {
     expect(() =>
       resolveSeed({ seed: "ab".repeat(15), network: "standalone" })

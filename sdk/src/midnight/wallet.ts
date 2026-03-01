@@ -96,13 +96,17 @@ export function resolveSeed(config: Pick<WalletConfig, "seed" | "network">): str
   const seed = config.seed || process.env.MIDNIGHT_WALLET_SEED;
 
   if (seed) {
-    if (!/^[0-9a-fA-F]+$/.test(seed)) {
+    const trimmed = seed.trim();
+    if (!/^[0-9a-fA-F]+$/.test(trimmed)) {
       throw new Error("Wallet seed must be a hex string");
     }
-    if (seed.length < 64) {
+    if (trimmed.length % 2 !== 0) {
+      throw new Error("Wallet seed must have an even number of hex characters (each byte is 2 hex chars)");
+    }
+    if (trimmed.length < 64) {
       throw new Error("Wallet seed must be at least 32 bytes (64 hex characters)");
     }
-    return seed;
+    return trimmed;
   }
 
   if (config.network === "mainnet") {
@@ -336,7 +340,15 @@ export async function createWallet(config: WalletConfig): Promise<ManagedWallet>
   const { zswapSecretKeys, dustSecretKey, keys } = deriveKeys(seedHex);
 
   // Set network ID globally (required by wallet-sdk internals — single network per process)
-  setNetworkId(networkToId(config.network));
+  const desiredNetworkId = networkToId(config.network);
+  const currentNetworkId = getNetworkId();
+  if (currentNetworkId !== undefined && currentNetworkId !== desiredNetworkId) {
+    throw new Error(
+      `Global network ID is already set to "${currentNetworkId}", which differs from requested "${desiredNetworkId}". ` +
+        "Multiple different Midnight networks in a single process are not supported."
+    );
+  }
+  setNetworkId(desiredNetworkId);
 
   const unshieldedKeystore = createKeystore(keys[Roles.NightExternal], getNetworkId());
 

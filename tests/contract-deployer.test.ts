@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
+import { tmpdir } from "node:os";
 import { resolveContractAssetsPath } from "../sdk/src/midnight/contract-deployer.js";
 
 describe("ContractDeployer - resolveContractAssetsPath", () => {
   it("should return explicit path when it exists", () => {
-    // Use a known existing directory as the contract assets path
-    const result = resolveContractAssetsPath("/tmp");
-    expect(result).toBe("/tmp");
+    // Use the platform temp directory (works on all OSes)
+    const tmp = tmpdir();
+    const result = resolveContractAssetsPath(tmp);
+    expect(result).toBe(tmp);
   });
 
   it("should throw when explicit path does not exist", () => {
