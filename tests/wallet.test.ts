@@ -5,6 +5,9 @@ import {
   networkToId,
 } from "../sdk/src/midnight/wallet.js";
 
+// Role indices from @midnight-ntwrk/wallet-sdk-hd (can't import native module in vitest)
+const Roles = { Zswap: 3, NightExternal: 0, Dust: 2 } as const;
+
 describe("Wallet - resolveSeed", () => {
   const originalEnv = process.env.MIDNIGHT_WALLET_SEED;
 
@@ -128,10 +131,9 @@ describe("Wallet - deriveKeys", () => {
   it("should include Zswap, NightExternal, and Dust role keys", () => {
     const result = deriveKeys(testSeed);
 
-    // Roles: Zswap=3, NightExternal=0, Dust=2
-    expect(result.keys[3]).toBeInstanceOf(Uint8Array); // Zswap
-    expect(result.keys[0]).toBeInstanceOf(Uint8Array); // NightExternal
-    expect(result.keys[2]).toBeInstanceOf(Uint8Array); // Dust
+    expect(result.keys[Roles.Zswap]).toBeInstanceOf(Uint8Array);
+    expect(result.keys[Roles.NightExternal]).toBeInstanceOf(Uint8Array);
+    expect(result.keys[Roles.Dust]).toBeInstanceOf(Uint8Array);
   });
 });
 

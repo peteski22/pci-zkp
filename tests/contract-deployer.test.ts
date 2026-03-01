@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { tmpdir } from "node:os";
 import { resolveContractAssetsPath } from "../sdk/src/midnight/contract-deployer.js";
 
@@ -25,11 +25,9 @@ describe("ContractDeployer - resolveContractAssetsPath", () => {
   });
 
   it("should include compilation instructions in error message", () => {
-    try {
-      resolveContractAssetsPath("/nonexistent/managed");
-    } catch (e) {
-      expect((e as Error).message).toContain("compact");
-    }
+    expect(() => resolveContractAssetsPath("/nonexistent/managed")).toThrow(
+      /compact/i
+    );
   });
 });
 
