@@ -1,5 +1,5 @@
 /**
- * Midnight Network Client (Ledger v7)
+ * Midnight Network Client (Ledger 8.1.0)
  *
  * Handles connection to Midnight services (node, proof server, indexer)
  * and provides wallet setup + ephemeral contract deployment.
@@ -60,17 +60,18 @@ const DEFAULT_CONFIG: Required<MidnightConfig> = {
 
 /**
  * Build indexer GraphQL URLs from a base indexer URL.
- * Ledger v7 uses /api/v3/ paths.
+ * Ledger 8 uses /api/v4/ paths (v3 remains a backwards-compat alias on
+ * indexer-standalone 4.x, but new work targets v4 explicitly).
  */
 function buildIndexerUrls(indexerUrl: string): { httpUrl: string; wsUrl: string } {
   const indexerBase = new URL(indexerUrl);
   const base = indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`;
 
-  const httpUrl = new URL("api/v3/graphql", base).href;
+  const httpUrl = new URL("api/v4/graphql", base).href;
 
   const wsBase = new URL(base);
   wsBase.protocol = indexerBase.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = new URL("api/v3/graphql/ws", wsBase.href).href;
+  const wsUrl = new URL("api/v4/graphql/ws", wsBase.href).href;
 
   return { httpUrl, wsUrl };
 }

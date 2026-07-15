@@ -1,13 +1,14 @@
-# Midnight Network - Local Development Stack (Ledger v7)
+# Midnight Network - Local Development Stack (Ledger 8.1.0)
 # Run: docker compose up -d
 #
 # This starts a local Midnight network for ZK proof generation and verification.
-# Based on: https://github.com/bricktowers/midnight-local-network
+# Aligned with pci-infra's Ledger 8.1.0 refresh (proof-server 8.1.0,
+# midnight-node 1.0.1, indexer-standalone 4.3.3, /api/v4/graphql).
 
 services:
   # Midnight blockchain node
   node:
-    image: midnightntwrk/midnight-node:0.20.1
+    image: midnightntwrk/midnight-node:1.0.1
     ports:
       - "9944:9944"
     environment:
@@ -20,13 +21,12 @@ services:
       start_period: 40s
 
   # Proof server - generates ZK proofs locally.
-  # Note: proof-server is still published under midnightnetwork/ (not midnightntwrk/)
-  # as of SDK 3.0.0. Uses its own versioning (4.0.0), compatible with Ledger v7.
+  # NB: the --network flag was removed in the Ledger 8 line; -v is the only flag.
   proof-server:
-    image: midnightnetwork/proof-server:4.0.0
+    image: midnightntwrk/proof-server:8.1.0
     ports:
       - "6300:6300"
-    command: ["midnight-proof-server", "--network", "undeployed"]
+    command: ["midnight-proof-server"]
     environment:
       RUST_BACKTRACE: full
     healthcheck:
@@ -36,17 +36,25 @@ services:
       retries: 10
       start_period: 30s
 
-  # Indexer - queries blockchain state
+  # Indexer - queries blockchain state.
+  # indexer-standalone 4.x is single-binary + SQLite: the storage/pubsub/ledger
+  # passwords from 3.x are gone; a single APP__INFRA__SECRET (hex-32-bytes) and
+  # APP__INFRA__SPO_NODE__BLOCKFROST_ID (placeholder OK for local dev) are now
+  # required. Serves both /api/v3/graphql (backwards-compat alias) and
+  # /api/v4/graphql (canonical for Ledger 8).
   indexer:
-    image: midnightntwrk/indexer-standalone:3.0.0
+    image: midnightntwrk/indexer-standalone:4.3.3
     ports:
       - "8088:8088"
     environment:
       APP__INFRA__SECRET: "303132333435363738393031323334353637383930313233343536373839303132"
+      APP__INFRA__SPO_NODE__BLOCKFROST_ID: "placeholder"
       APP__INFRA__NODE__URL: "ws://node:9944"
       RUST_LOG: "indexer=debug,chain_indexer=debug,indexer_api=debug"
+    volumes:
+      - indexer-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-sf", "-o", "/dev/null", "-X", "POST", "-H", "Content-Type: application/json", "-d", "{\"query\":\"{ __typename }\"}", "http://localhost:8088/api/v3/graphql"]
+      test: ["CMD", "curl", "-sf", "-o", "/dev/null", "-X", "POST", "-H", "Content-Type: application/json", "-d", "{\"query\":\"{ __typename }\"}", "http://localhost:8088/api/v4/graphql"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -72,6 +80,9 @@ services:
         condition: service_healthy
       indexer:
         condition: service_healthy
+
+volumes:
+  indexer-data:
 
 networks:
   default:

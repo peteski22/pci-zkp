@@ -194,15 +194,19 @@ export class AgeVerification {
     wsBase.protocol = indexerBase.protocol === "https:" ? "wss:" : "ws:";
 
     const normalisedPath = indexerBase.pathname.replace(/\/+$/, "");
-    const hasGraphqlPath = normalisedPath.endsWith("/api/v3/graphql");
+    // Accept either /api/v4/graphql (canonical for Ledger 8) or /api/v3/graphql
+    // (backwards-compat alias still served by indexer-standalone 4.x).
+    const hasGraphqlPath =
+      normalisedPath.endsWith("/api/v4/graphql") ||
+      normalisedPath.endsWith("/api/v3/graphql");
 
     const httpUrl = hasGraphqlPath
       ? indexerBase.href
-      : new URL("api/v3/graphql", indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`).href;
+      : new URL("api/v4/graphql", indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`).href;
 
     const wsUrl = hasGraphqlPath
       ? new URL(`${normalisedPath}/ws`, wsBase.origin).href
-      : new URL("api/v3/graphql/ws", wsBase.href.endsWith("/") ? wsBase.href : `${wsBase.href}/`).href;
+      : new URL("api/v4/graphql/ws", wsBase.href.endsWith("/") ? wsBase.href : `${wsBase.href}/`).href;
 
     return {
       seed: this.config.walletSeed,

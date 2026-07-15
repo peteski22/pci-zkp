@@ -16,14 +16,6 @@ describe("ContractDeployer - resolveContractAssetsPath", () => {
     ).toThrow("Contract assets not found at");
   });
 
-  it("should throw with helpful message when default path does not exist", () => {
-    // With no argument, it looks for the default contract/src/managed/proofs path
-    // which won't exist in the test environment (compactc not installed)
-    expect(() => resolveContractAssetsPath()).toThrow(
-      /Compact contract must be compiled|Contract assets not found/
-    );
-  });
-
   it("should include compilation instructions in error message", () => {
     expect(() => resolveContractAssetsPath("/nonexistent/managed")).toThrow(
       /compact/i

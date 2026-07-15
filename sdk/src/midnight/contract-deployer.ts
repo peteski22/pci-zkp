@@ -41,7 +41,11 @@ export interface DeploymentResult {
 /**
  * Resolve the path to compiled contract assets (managed/ directory).
  *
- * Priority: explicit path > default relative path from contract/src/managed/proofs.
+ * Priority: explicit path > default relative path from contract/managed.
+ *
+ * The returned directory is the root that Compact 0.31.0 produces — it holds
+ * `contract/`, `keys/`, `zkir/`, and `compiler/` subdirectories.
+ * NodeZkConfigProvider reads `keys/` and `zkir/` from this base directory.
  *
  * @throws Error if the resolved path does not exist
  */
@@ -56,16 +60,16 @@ export function resolveContractAssetsPath(contractAssetsPath?: string): string {
     return contractAssetsPath;
   }
 
-  // Default: look relative to the SDK package (../../../contract/src/managed/proofs)
+  // Default: look relative to the SDK package (../../../contract/managed)
   const thisDir = dirname(fileURLToPath(import.meta.url));
-  const defaultPath = resolve(thisDir, "..", "..", "..", "contract", "src", "managed", "proofs");
+  const defaultPath = resolve(thisDir, "..", "..", "..", "contract", "managed");
 
   if (!existsSync(defaultPath)) {
     throw new Error(
       `Compiled contract assets not found at default path: ${defaultPath}\n` +
         "The Compact contract must be compiled before on-chain proofs can be generated.\n" +
-        "Install the compiler: npm install -g @midnight-ntwrk/compact@0.28.0\n" +
-        "Then compile: cd contract && compactc src/proofs.compact --output src/managed"
+        "Install the compiler: compact update 0.31.0\n" +
+        "Then compile: cd contract && compactc src/proofs.compact managed"
     );
   }
 
@@ -117,11 +121,18 @@ export async function deployAndVerifyAge(
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // 4. Assemble all providers
+  //
+  // levelPrivateStateProvider (midnight-js 4.x) requires an `accountId` and a
+  // `privateStoragePasswordProvider`. Each proof interaction deploys a fresh
+  // ephemeral contract, so we generate a fresh account id per call and use an
+  // in-memory random password — the on-disk private state is throwaway.
+  const ephemeralId = randomUUID();
+  const ephemeralPassword = randomUUID();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const providers: MidnightProviders<any, any, any> = {
     privateStateProvider: levelPrivateStateProvider({
-      privateStateStoreName: `pci-age-verification-${randomUUID()}`,
-      walletProvider: walletAndMidnightProvider,
+      accountId: `pci-age-verification-${ephemeralId}`,
+      privateStoragePasswordProvider: () => ephemeralPassword,
     }),
     publicDataProvider: indexerPublicDataProvider(config.indexerUrl, config.indexerWsUrl),
     zkConfigProvider,
@@ -179,35 +190,33 @@ export async function deployAndVerifyAge(
 /**
  * Attempt to load the compiled contract module from the managed directory.
  *
- * The Compact compiler generates a JS module with Contract and witnesses exports.
- * This is loaded dynamically since it may not exist at build time.
+ * Compact 0.31.0 emits ESM at `<managed>/contract/index.js`. Older 0.28.0
+ * output (`<managed>/index.cjs`) is also accepted for backwards compatibility
+ * while transitional builds may still be around.
  */
 async function loadContractModule(assetsPath: string): Promise<{
   Contract: unknown;
   witnesses: unknown;
 }> {
-  try {
-    // The Compact compiler generates a JS module in the managed/ directory.
-    // Expected layout: managed/index.cjs (or index.js), managed/proofs/ (ZK assets).
-    // The assetsPath points to managed/proofs/, so the module is one level up.
-    const modulePath = resolve(assetsPath, "..", "index.cjs");
-    if (existsSync(modulePath)) {
-      return await import(pathToFileURL(modulePath).href);
-    }
-
-    // Try ESM variant
-    const esmPath = resolve(assetsPath, "..", "index.js");
-    if (existsSync(esmPath)) {
-      return await import(pathToFileURL(esmPath).href);
-    }
-
-    throw new Error(
-      `No contract module found. Looked for:\n  ${modulePath}\n  ${esmPath}`
-    );
-  } catch (err) {
-    throw new Error(
-      `Failed to load compiled contract module from ${assetsPath}: ${err instanceof Error ? err.message : err}\n` +
-        "Ensure the Compact contract has been compiled with: cd contract && compactc src/proofs.compact --output src/managed"
-    );
+  // Compact 0.31.0 layout: managed/contract/index.js (ESM).
+  const esmPath = resolve(assetsPath, "contract", "index.js");
+  if (existsSync(esmPath)) {
+    return import(pathToFileURL(esmPath).href);
   }
+
+  // Legacy 0.28.0 layout: managed/index.cjs, with ZK assets in managed/<name>/.
+  const legacyCjs = resolve(assetsPath, "..", "index.cjs");
+  if (existsSync(legacyCjs)) {
+    return import(pathToFileURL(legacyCjs).href);
+  }
+  const legacyEsm = resolve(assetsPath, "..", "index.js");
+  if (existsSync(legacyEsm)) {
+    return import(pathToFileURL(legacyEsm).href);
+  }
+
+  throw new Error(
+    `No compiled contract module found under ${assetsPath}. Looked for:\n` +
+      `  ${esmPath}\n  ${legacyCjs}\n  ${legacyEsm}\n` +
+      "Ensure the Compact contract has been compiled with: cd contract && compactc src/proofs.compact managed"
+  );
 }

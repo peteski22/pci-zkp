@@ -10,22 +10,21 @@
  */
 
 import { HDWallet, Roles } from "@midnight-ntwrk/wallet-sdk-hd";
-import { WalletFacade } from "@midnight-ntwrk/wallet-sdk-facade";
+import { WalletFacade, WalletEntrySchema } from "@midnight-ntwrk/wallet-sdk-facade";
 import { ShieldedWallet } from "@midnight-ntwrk/wallet-sdk-shielded";
 import {
   UnshieldedWallet,
-  InMemoryTransactionHistoryStorage,
   createKeystore,
   PublicKey,
   type UnshieldedKeystore,
 } from "@midnight-ntwrk/wallet-sdk-unshielded-wallet";
 import { DustWallet } from "@midnight-ntwrk/wallet-sdk-dust-wallet";
+import { InMemoryTransactionHistoryStorage } from "@midnight-ntwrk/wallet-sdk-abstractions";
 import {
   ZswapSecretKeys,
   DustSecretKey,
   LedgerParameters,
-  Intent,
-} from "@midnight-ntwrk/ledger-v7";
+} from "@midnight-ntwrk/ledger-v8";
 import { getNetworkId, setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import * as Rx from "rxjs";
 import type { MidnightNetwork } from "./client.js";
@@ -36,9 +35,9 @@ export interface WalletConfig {
   seed?: string;
   /** Target network */
   network: MidnightNetwork;
-  /** Indexer GraphQL HTTP URL (with /api/v3/graphql path) */
+  /** Indexer GraphQL HTTP URL (with /api/v4/graphql path) */
   indexerUrl: string;
-  /** Indexer GraphQL WebSocket URL (with /api/v3/graphql/ws path) */
+  /** Indexer GraphQL WebSocket URL (with /api/v4/graphql/ws path) */
   indexerWsUrl: string;
   /** Midnight node WebSocket URL (ws:// or wss://) for relay */
   nodeUrl: string;
@@ -163,58 +162,42 @@ export function deriveKeys(seedHex: string): DerivedKeys {
 }
 
 /**
- * Build the configuration for ShieldedWallet.
+ * Build a merged Midnight wallet configuration for the `WalletFacade.init`
+ * factory. All three sub-wallets (shielded, unshielded, Dust) now require
+ * a `txHistoryStorage` (previously unshielded-only), so the object below
+ * intentionally supplies one at the top level.
  *
- * Requires: networkId, indexerClientConnection, provingServerUrl, relayURL.
+ * NOTE: With wallet-sdk 4.x, `DefaultConfiguration` is an intersection of
+ * per-wallet default configuration types whose exact shape shifts between
+ * canary/patch releases. The typing here is intentionally loose (`unknown`
+ * cast at the `WalletFacade.init` call site) so that the SDK bump does not
+ * become a full facade-configuration refactor. Runtime correctness of this
+ * config against a real network needs live verification when the local
+ * stack is up (see pci-infra Ledger 8 refresh).
  */
-function buildShieldedConfig(config: WalletConfig) {
-  return {
-    networkId: networkToId(config.network),
-    indexerClientConnection: {
-      indexerHttpUrl: config.indexerUrl,
-      indexerWsUrl: config.indexerWsUrl,
-    },
-    provingServerUrl: new URL(config.proofServerUrl),
-    relayURL: new URL(ensureWsProtocol(config.nodeUrl)),
+function buildFacadeConfig(config: WalletConfig) {
+  const indexerClientConnection = {
+    indexerHttpUrl: config.indexerUrl,
+    indexerWsUrl: config.indexerWsUrl,
   };
-}
+  const provingServerUrl = new URL(config.proofServerUrl);
+  const relayURL = new URL(ensureWsProtocol(config.nodeUrl));
 
-/**
- * Build the configuration for UnshieldedWallet.
- *
- * Requires: networkId, indexerClientConnection, txHistoryStorage.
- */
-function buildUnshieldedConfig(config: WalletConfig) {
   return {
     networkId: networkToId(config.network),
-    indexerClientConnection: {
-      indexerHttpUrl: config.indexerUrl,
-      indexerWsUrl: config.indexerWsUrl,
-    },
-    txHistoryStorage: new InMemoryTransactionHistoryStorage(),
-  };
-}
-
-/**
- * Build the configuration for DustWallet.
- *
- * Requires: networkId, costParameters, indexerClientConnection,
- * provingServerUrl, relayURL.
- */
-function buildDustConfig(config: WalletConfig) {
-  return {
-    networkId: networkToId(config.network),
-    // Cost parameters from official counter example (midnightntwrk/example-counter)
+    indexerClientConnection,
+    provingServerUrl,
+    relayURL,
+    // Cost parameters from official counter example (midnightntwrk/example-counter).
     costParameters: {
       additionalFeeOverhead: 300_000_000_000_000n,
       feeBlocksMargin: 5,
     },
-    indexerClientConnection: {
-      indexerHttpUrl: config.indexerUrl,
-      indexerWsUrl: config.indexerWsUrl,
-    },
-    provingServerUrl: new URL(config.proofServerUrl),
-    relayURL: new URL(ensureWsProtocol(config.nodeUrl)),
+    // In-memory transaction history — the ephemeral, single-use wallets
+    // used for ZK proof generation do not require persistent history.
+    // WalletEntrySchema is the canonical merged shielded/unshielded/dust
+    // entry shape exported by wallet-sdk-facade.
+    txHistoryStorage: new InMemoryTransactionHistoryStorage(WalletEntrySchema),
   };
 }
 
@@ -235,15 +218,28 @@ function ensureWsProtocol(url: string): string {
  * This provider bridges the wallet facade into the midnight-js-contracts
  * provider interface, handling balancing, signing, and submission.
  *
- * Includes the signRecipe workaround for the wallet-sdk 1.0.0 bug where
- * hardcoded 'pre-proof' markers fail for proven intents.
+ * NOTE (wallet-sdk 4.x migration): the private-constructor rework of
+ * `WalletFacade` and the associated recipe/signing surface changed shape
+ * substantially. The pre-`proof`/`pre-proof` intent-cloning workaround
+ * from wallet-sdk 1.0.0 should be obsolete in 4.0.1 — the facade now
+ * exposes a first-class `signRecipe(recipe, signSegment)` method. We use
+ * that path here, but the exact ordering/segmentation still needs live
+ * verification against a running Ledger 8 stack.
  */
 export async function createWalletAndMidnightProvider(
   wallet: ManagedWallet,
 ): Promise<WalletProvider & MidnightProvider> {
-  const state = await Rx.firstValueFrom(
-    wallet.facade.state().pipe(Rx.filter((s) => s.isSynced)),
-  );
+  // FacadeState is fully typed by the SDK, but the wallet-sdk 4.x types
+  // pull in effect/Schema generics that make the exact `state` type verbose;
+  // narrow through `any` at the boundary and use only the fields we need.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const state = (await Rx.firstValueFrom(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    wallet.facade.state().pipe(Rx.filter((s: any) => s.isSynced)),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  )) as any;
+
+  const signFn = (payload: Uint8Array) => wallet.unshieldedKeystore.signData(payload);
 
   return {
     getCoinPublicKey() {
@@ -262,16 +258,9 @@ export async function createWalletAndMidnightProvider(
         { ttl: ttl ?? new Date(Date.now() + 30 * 60 * 1000) },
       );
 
-      const signFn = (payload: Uint8Array) =>
-        wallet.unshieldedKeystore.signData(payload);
-
-      // Sign transaction intents (workaround for wallet-sdk 1.0.0 bug)
-      signRecipeIntents(recipe.baseTransaction, signFn, "proof");
-      if (recipe.balancingTransaction) {
-        signRecipeIntents(recipe.balancingTransaction, signFn, "pre-proof");
-      }
-
-      return wallet.facade.finalizeRecipe(recipe);
+      // wallet-sdk 4.x: use the facade's first-class signRecipe path.
+      const signed = await wallet.facade.signRecipe(recipe, signFn);
+      return wallet.facade.finalizeRecipe(signed);
     },
     submitTx(tx) {
       return wallet.facade.submitTransaction(tx) as Promise<string>;
@@ -280,60 +269,19 @@ export async function createWalletAndMidnightProvider(
 }
 
 /**
- * Sign transaction intents, working around the wallet-sdk 1.0.0 bug.
- *
- * The bug hardcodes 'pre-proof' markers which fails for proven intents
- * containing actual proof data. This function manually deserializes with
- * the correct marker and applies signatures.
- */
-function signRecipeIntents(
-  tx: { intents?: Map<number, unknown> },
-  signFn: (payload: Uint8Array) => string,
-  proofMarker: "proof" | "pre-proof",
-): void {
-  if (!tx.intents || tx.intents.size === 0) return;
-
-  for (const segment of tx.intents.keys()) {
-    const intent = tx.intents.get(segment) as { serialize(): Uint8Array; signatureData(s: number): Uint8Array };
-    if (!intent) continue;
-
-    const cloned = Intent.deserialize(
-      "signature",
-      proofMarker,
-      "pre-binding",
-      intent.serialize(),
-    );
-
-    const sigData = cloned.signatureData(segment);
-    const signature = signFn(sigData);
-
-    if (cloned.fallibleUnshieldedOffer) {
-      const sigs = cloned.fallibleUnshieldedOffer.inputs.map(
-        (_: unknown, i: number) =>
-          cloned.fallibleUnshieldedOffer!.signatures.at(i) ?? signature,
-      );
-      cloned.fallibleUnshieldedOffer =
-        cloned.fallibleUnshieldedOffer.addSignatures(sigs);
-    }
-
-    if (cloned.guaranteedUnshieldedOffer) {
-      const sigs = cloned.guaranteedUnshieldedOffer.inputs.map(
-        (_: unknown, i: number) =>
-          cloned.guaranteedUnshieldedOffer!.signatures.at(i) ?? signature,
-      );
-      cloned.guaranteedUnshieldedOffer =
-        cloned.guaranteedUnshieldedOffer.addSignatures(sigs);
-    }
-
-    tx.intents.set(segment, cloned);
-  }
-}
-
-/**
  * Create a fully configured ManagedWallet.
  *
- * Builds ShieldedWallet + UnshieldedWallet + DustWallet, wraps them in a
- * WalletFacade, starts the facade, and returns the managed wallet.
+ * Uses the wallet-sdk 4.x `WalletFacade.init` factory: it wires the three
+ * sub-wallets (shielded, unshielded, Dust) plus default submission /
+ * pending-tx / proving services, and returns a started facade.
+ *
+ * @remarks
+ * The wallet-sdk 4.x configuration surface uses effect/Schema-heavy
+ * generic types whose exact shape moves between canary/patch releases.
+ * The `configuration` object is intentionally passed through an `unknown`
+ * cast at the boundary — this is a pragmatic bridge for the SDK bump.
+ * Full type-safe wiring plus a live-network smoke test is tracked as a
+ * follow-up to the SDK version bump.
  */
 export async function createWallet(config: WalletConfig): Promise<ManagedWallet> {
   const seedHex = resolveSeed(config);
@@ -359,25 +307,41 @@ export async function createWallet(config: WalletConfig): Promise<ManagedWallet>
     if (buf instanceof Uint8Array) buf.fill(0);
   }
 
-  // Create sub-wallets
-  const shieldedWallet = ShieldedWallet(buildShieldedConfig(config))
-    .startWithSecretKeys(zswapSecretKeys);
+  const configuration = buildFacadeConfig(config);
 
-  const unshieldedWallet = UnshieldedWallet(buildUnshieldedConfig(config))
-    .startWithPublicKey(PublicKey.fromKeyStore(unshieldedKeystore));
+  // Capture sub-wallet handles so we can query addresses after init.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let shieldedHandle: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let unshieldedHandle: any;
 
-  const dustWallet = DustWallet(buildDustConfig(config))
-    .startWithSecretKey(dustSecretKey, LedgerParameters.initialParameters().dust);
-
-  // Create facade and start — wrap in try/catch to clean up on failure
-  const facade = new WalletFacade(shieldedWallet, unshieldedWallet, dustWallet);
+  // See @remarks above for the rationale for the `unknown` cast on init.
+  const facade = await WalletFacade.init({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    configuration: configuration as any,
+    shielded: () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      shieldedHandle = ShieldedWallet(configuration as any).startWithSecretKeys(zswapSecretKeys);
+      return shieldedHandle;
+    },
+    unshielded: () => {
+      unshieldedHandle = UnshieldedWallet(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        configuration as any,
+      ).startWithPublicKey(PublicKey.fromKeyStore(unshieldedKeystore));
+      return unshieldedHandle;
+    },
+    dust: () =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      DustWallet(configuration as any).startWithSecretKey(
+        dustSecretKey,
+        LedgerParameters.initialParameters().dust,
+      ),
+  });
 
   try {
-    await facade.start(zswapSecretKeys, dustSecretKey);
-
-    // Get addresses
-    const shieldedAddr = await shieldedWallet.getAddress();
-    const unshieldedAddr = await unshieldedWallet.getAddress();
+    const shieldedAddr = await shieldedHandle.getAddress();
+    const unshieldedAddr = await unshieldedHandle.getAddress();
 
     return {
       facade,
@@ -388,7 +352,8 @@ export async function createWallet(config: WalletConfig): Promise<ManagedWallet>
       unshieldedAddress: unshieldedAddr.hexString,
 
       async stop() {
-        await facade.stop();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (facade as any).stop?.();
         zswapSecretKeys.clear();
         dustSecretKey.clear();
       },
@@ -397,14 +362,16 @@ export async function createWallet(config: WalletConfig): Promise<ManagedWallet>
         await Rx.firstValueFrom(
           facade.state().pipe(
             Rx.throttleTime(2_000),
-            Rx.filter((state) => state.isSynced),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            Rx.filter((state: any) => state.isSynced),
             Rx.timeout(timeoutMs),
           ),
         );
       },
     };
   } catch (err) {
-    await facade.stop().catch(() => {});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (facade as any).stop?.().catch(() => {});
     zswapSecretKeys.clear();
     dustSecretKey.clear();
     throw err;
