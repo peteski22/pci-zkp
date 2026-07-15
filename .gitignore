@@ -38,3 +38,8 @@ npm-debug.log*
 # Lock files (using pnpm)
 package-lock.json
 yarn.lock
+
+# Claude Code local config (do not commit)
+.claude/
+AGENTS.md
+CLAUDE.md
