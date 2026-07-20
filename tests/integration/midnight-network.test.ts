@@ -1,5 +1,5 @@
 /**
- * Integration tests for Midnight network (Ledger v7)
+ * Integration tests for Midnight network (Ledger 8.1.0)
  *
  * Prerequisites:
  * - Start Midnight network: make dev (or docker compose up -d)
@@ -63,8 +63,8 @@ describe("Midnight Network Integration", () => {
         return;
       }
 
-      // Ledger v7 uses /api/v3/ paths
-      const response = await fetch(`${INDEXER_URL}/api/v3/graphql`, {
+      // Ledger 8 uses /api/v4/ paths
+      const response = await fetch(`${INDEXER_URL}/api/v4/graphql`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: "{ __typename }" }),

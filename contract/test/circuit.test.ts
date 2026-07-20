@@ -5,15 +5,12 @@
  * before deploying to the Midnight network.
  */
 
-import { Contract, ledger, type Witnesses } from '../managed/contract/index.cjs';
+// Compact 0.31.0 emits ESM at managed/contract/index.js (was .cjs in 0.28.0).
+import { Contract, ledger, type Witnesses } from '../managed/contract/index.js';
 import {
-  constructorContext,
-  emptyZswapLocalState,
-  sampleContractAddress,
+  createConstructorContext,
+  createCircuitContext,
   dummyContractAddress,
-  NetworkId,
-  QueryContext,
-  type CircuitContext,
   type WitnessContext,
   type ConstructorResult,
   type ContractState,
@@ -40,23 +37,16 @@ function createWitnesses(birthYear: number, birthMonth: number, birthDay: number
   };
 }
 
-// Create a circuit context from contract state
-function createCircuitContext(
-  contractState: ContractState,
-  privateState: PrivateState
-): CircuitContext<PrivateState> {
-  // QueryContext constructor takes (StateValue, ContractAddress)
-  const queryCtx = new QueryContext(
-    contractState.data,
-    dummyContractAddress(NetworkId.Undeployed)
+// Wrap the compact-runtime 0.16.0 helper so the test call sites stay concise.
+// The helper builds a real `CircuitContext` class instance (0.16.0 stopped
+// accepting a duck-typed struct literal).
+function makeCtx(contractState: ContractState, privateState: PrivateState) {
+  return createCircuitContext<PrivateState>(
+    dummyContractAddress(),
+    SAMPLE_COIN_PUBLIC_KEY,
+    contractState,
+    privateState,
   );
-
-  return {
-    originalState: contractState,
-    currentPrivateState: privateState,
-    currentZswapLocalState: emptyZswapLocalState(SAMPLE_COIN_PUBLIC_KEY),
-    transactionContext: queryCtx,
-  };
 }
 
 async function runTest() {
@@ -71,7 +61,7 @@ async function runTest() {
 
   // Initialize the contract state
   const initialPrivateState: PrivateState = {};
-  const initCtx = constructorContext(initialPrivateState, SAMPLE_COIN_PUBLIC_KEY);
+  const initCtx = createConstructorContext(initialPrivateState, SAMPLE_COIN_PUBLIC_KEY);
   const initResult: ConstructorResult<PrivateState> = contract1.initialState(initCtx);
 
   console.log('  Contract initialized');
@@ -85,7 +75,7 @@ async function runTest() {
   });
 
   // Create circuit context with current state
-  const ctx1 = createCircuitContext(initResult.currentContractState, initResult.currentPrivateState);
+  const ctx1 = makeCtx(initResult.currentContractState, initResult.currentPrivateState);
 
   // Execute the verifyAge circuit
   // Args: minAge, currentYear, currentMonth, currentDay
@@ -98,7 +88,7 @@ async function runTest() {
   );
 
   // Check ledger state after circuit execution (result.context holds updated state)
-  const newLedger1 = ledger(result1.context.transactionContext.state);
+  const newLedger1 = ledger(result1.context.currentQueryContext.state);
   console.log('  Result:', {
     verified: newLedger1.verified,
     lastMinAge: newLedger1.lastMinAge,
@@ -118,12 +108,12 @@ async function runTest() {
   const witnesses2 = createWitnesses(2010, 3, 20); // March 20, 2010
   const contract2 = new Contract(witnesses2);
 
-  const initResult2 = contract2.initialState(constructorContext({}, SAMPLE_COIN_PUBLIC_KEY));
-  const ctx2 = createCircuitContext(initResult2.currentContractState, initResult2.currentPrivateState);
+  const initResult2 = contract2.initialState(createConstructorContext({}, SAMPLE_COIN_PUBLIC_KEY));
+  const ctx2 = makeCtx(initResult2.currentContractState, initResult2.currentPrivateState);
 
   const result2 = contract2.circuits.verifyAge(ctx2, 21n, 2024n, 12n, 4n);
 
-  const newLedger2 = ledger(result2.context.transactionContext.state);
+  const newLedger2 = ledger(result2.context.currentQueryContext.state);
   console.log('  Result:', {
     verified: newLedger2.verified,
     lastMinAge: newLedger2.lastMinAge,
@@ -142,12 +132,12 @@ async function runTest() {
   const witnesses3 = createWitnesses(2003, 12, 4); // Dec 4, 2003
   const contract3 = new Contract(witnesses3);
 
-  const initResult3 = contract3.initialState(constructorContext({}, SAMPLE_COIN_PUBLIC_KEY));
-  const ctx3 = createCircuitContext(initResult3.currentContractState, initResult3.currentPrivateState);
+  const initResult3 = contract3.initialState(createConstructorContext({}, SAMPLE_COIN_PUBLIC_KEY));
+  const ctx3 = makeCtx(initResult3.currentContractState, initResult3.currentPrivateState);
 
   const result3 = contract3.circuits.verifyAge(ctx3, 21n, 2024n, 12n, 4n);
 
-  const newLedger3 = ledger(result3.context.transactionContext.state);
+  const newLedger3 = ledger(result3.context.currentQueryContext.state);
   console.log('  Result:', {
     verified: newLedger3.verified,
     lastMinAge: newLedger3.lastMinAge,
@@ -165,12 +155,12 @@ async function runTest() {
   const witnesses4 = createWitnesses(1990, 1, 15);
   const contract4 = new Contract(witnesses4);
 
-  const initResult4 = contract4.initialState(constructorContext({}, SAMPLE_COIN_PUBLIC_KEY));
-  const ctx4 = createCircuitContext(initResult4.currentContractState, initResult4.currentPrivateState);
+  const initResult4 = contract4.initialState(createConstructorContext({}, SAMPLE_COIN_PUBLIC_KEY));
+  const ctx4 = makeCtx(initResult4.currentContractState, initResult4.currentPrivateState);
 
   const result4 = contract4.circuits.verifyAge(ctx4, 25n, 2024n, 12n, 4n);
 
-  const newLedger4 = ledger(result4.context.transactionContext.state);
+  const newLedger4 = ledger(result4.context.currentQueryContext.state);
   console.log('  Result:', {
     verified: newLedger4.verified,
     lastMinAge: newLedger4.lastMinAge,

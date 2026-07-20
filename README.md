@@ -91,13 +91,13 @@ export circuit proveAgeOver(
 curl -fsSL https://docs.midnight.network/install | bash
 
 # Install a specific version (must match pragma in .compact files)
-compact update 0.28.0
+compact update 0.31.0
 
 # Verify installation
-~/.compact/versions/0.28.0/x86_64-unknown-linux-musl/compactc.bin --version
+~/.compact/versions/0.31.0/x86_64-unknown-linux-musl/compactc.bin --version
 ```
 
-The Makefile expects `compactc.bin` to be in `~/.compact/versions/0.28.0/x86_64-unknown-linux-musl/`.
+The Makefile expects `compactc.bin` to be in `~/.compact/versions/0.31.0/x86_64-unknown-linux-musl/`.
 
 ### Makefile Commands
 
@@ -138,7 +138,11 @@ make status
 # Or manually:
 curl http://localhost:9944/health      # Node
 curl http://localhost:6300/health      # Proof server
-curl http://localhost:8088/api/v3/graphql  # Indexer
+# Indexer GraphQL — /api/v4/graphql is canonical; v3 is a backwards-compat alias
+curl -fsS -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ __typename }"}' \
+  http://localhost:8088/api/v4/graphql
 ```
 
 ## Related Packages
