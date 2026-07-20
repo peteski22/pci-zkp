@@ -138,7 +138,11 @@ make status
 # Or manually:
 curl http://localhost:9944/health      # Node
 curl http://localhost:6300/health      # Proof server
-curl http://localhost:8088/api/v4/graphql  # Indexer (v3 is a backwards-compat alias)
+# Indexer GraphQL — /api/v4/graphql is canonical; v3 is a backwards-compat alias
+curl -fsS -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ __typename }"}' \
+  http://localhost:8088/api/v4/graphql
 ```
 
 ## Related Packages

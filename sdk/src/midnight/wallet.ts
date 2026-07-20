@@ -352,10 +352,13 @@ export async function createWallet(config: WalletConfig): Promise<ManagedWallet>
       unshieldedAddress: unshieldedAddr.hexString,
 
       async stop() {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (facade as any).stop?.();
-        zswapSecretKeys.clear();
-        dustSecretKey.clear();
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (facade as any).stop?.();
+        } finally {
+          zswapSecretKeys.clear();
+          dustSecretKey.clear();
+        }
       },
 
       async waitForSync(timeoutMs = 60_000) {
@@ -370,10 +373,16 @@ export async function createWallet(config: WalletConfig): Promise<ManagedWallet>
       },
     };
   } catch (err) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (facade as any).stop?.().catch(() => {});
-    zswapSecretKeys.clear();
-    dustSecretKey.clear();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const stopFn = (facade as any).stop;
+      if (typeof stopFn === "function") {
+        await stopFn.call(facade).catch(() => {});
+      }
+    } finally {
+      zswapSecretKeys.clear();
+      dustSecretKey.clear();
+    }
     throw err;
   }
 }

@@ -59,21 +59,34 @@ const DEFAULT_CONFIG: Required<MidnightConfig> = {
 };
 
 /**
- * Build indexer GraphQL URLs from a base indexer URL.
+ * Build indexer GraphQL URLs from either a base URL or an existing
+ * /api/v3/graphql / /api/v4/graphql endpoint.
+ *
  * Ledger 8 uses /api/v4/ paths (v3 remains a backwards-compat alias on
- * indexer-standalone 4.x, but new work targets v4 explicitly).
+ * indexer-standalone 4.x, but new work targets v4 explicitly). Callers that
+ * already normalised the endpoint (e.g. AgeVerification.buildWalletConfig)
+ * pass the full path in, so we detect it and avoid double-appending.
  */
 function buildIndexerUrls(indexerUrl: string): { httpUrl: string; wsUrl: string } {
-  const indexerBase = new URL(indexerUrl);
-  const base = indexerBase.href.endsWith("/") ? indexerBase.href : `${indexerBase.href}/`;
+  const parsed = new URL(indexerUrl);
+  const normalisedPath = parsed.pathname.replace(/\/$/, "");
+  const alreadyHasEndpoint =
+    normalisedPath.endsWith("/api/v4/graphql") ||
+    normalisedPath.endsWith("/api/v3/graphql");
 
-  const httpUrl = new URL("api/v4/graphql", base).href;
+  const http = new URL(parsed.href);
+  if (!alreadyHasEndpoint) {
+    const base = http.href.endsWith("/") ? http.href : `${http.href}/`;
+    http.href = new URL("api/v4/graphql", base).href;
+  }
 
-  const wsBase = new URL(base);
-  wsBase.protocol = indexerBase.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = new URL("api/v4/graphql/ws", wsBase.href).href;
+  const ws = new URL(http.href);
+  ws.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  if (!ws.pathname.endsWith("/ws")) {
+    ws.pathname = `${ws.pathname}/ws`;
+  }
 
-  return { httpUrl, wsUrl };
+  return { httpUrl: http.href, wsUrl: ws.href };
 }
 
 /**

@@ -69,7 +69,7 @@ export function resolveContractAssetsPath(contractAssetsPath?: string): string {
       `Compiled contract assets not found at default path: ${defaultPath}\n` +
         "The Compact contract must be compiled before on-chain proofs can be generated.\n" +
         "Install the compiler: compact update 0.31.0\n" +
-        "Then compile: cd contract && compactc src/proofs.compact managed"
+        "Then compile: cd contract && pnpm run compact"
     );
   }
 
@@ -141,50 +141,71 @@ export async function deployAndVerifyAge(
     midnightProvider: walletAndMidnightProvider,
   };
 
-  // 5. Deploy fresh contract
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const deployed = await (deployContract as any)(providers, {
-    compiledContract,
-    privateStateId: "ageVerificationPrivateState",
-    initialPrivateState: {},
-  });
+  // 5. Deploy + call inside try/finally so the ephemeral private-state entry
+  // is removed even if the tx fails. levelPrivateStateProvider exposes clear()
+  // (nukes all contract private states in this scope) and remove(id) — see
+  // docs.midnight.network/api-reference/midnight-js/midnight-js-types/interfaces/PrivateStateProvider.
+  // The provider itself has no close/dispose; the underlying LevelDB dir will
+  // remain empty on disk but functional state is released.
+  const privateStateId = "ageVerificationPrivateState";
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deployed = await (deployContract as any)(providers, {
+      compiledContract,
+      privateStateId,
+      initialPrivateState: {},
+    });
 
-  const contractAddress = deployed.deployTxData.public.contractAddress;
+    const contractAddress = deployed.deployTxData.public.contractAddress;
 
-  // 6. Call verifyAge circuit
-  const { year, month, day } = parseDateForCircuit(currentDate);
+    // 6. Call verifyAge circuit
+    const { year, month, day } = parseDateForCircuit(currentDate);
 
-  // The callTx interface is dynamically typed from the compiled contract.
-  // The circuit can return verified=false for underage users without throwing,
-  // so we must read the actual on-chain state after the tx.
-  const contract = deployed as unknown as {
-    callTx: {
-      verifyAge(
-        minAge: bigint,
-        currentYear: bigint,
-        currentMonth: bigint,
-        currentDay: bigint,
-      ): Promise<{ txHash: string; blockHeight: number }>;
-      getVerified(): Promise<{ txHash: string; blockHeight: number; result: boolean }>;
+    // The callTx interface is dynamically typed from the compiled contract.
+    // The circuit can return verified=false for underage users without throwing,
+    // so we must read the actual on-chain state after the tx.
+    const contract = deployed as unknown as {
+      callTx: {
+        verifyAge(
+          minAge: bigint,
+          currentYear: bigint,
+          currentMonth: bigint,
+          currentDay: bigint,
+        ): Promise<{ txHash: string; blockHeight: number }>;
+        getVerified(): Promise<{ txHash: string; blockHeight: number; result: boolean }>;
+      };
     };
-  };
 
-  const result = await contract.callTx.verifyAge(
-    BigInt(minAge),
-    year,
-    month,
-    day,
-  );
+    const result = await contract.callTx.verifyAge(
+      BigInt(minAge),
+      year,
+      month,
+      day,
+    );
 
-  // Read the actual verified state from the contract (the circuit sets it via disclose())
-  const verifiedResult = await contract.callTx.getVerified();
+    // Read the actual verified state from the contract (the circuit sets it via disclose())
+    const verifiedResult = await contract.callTx.getVerified();
 
-  return {
-    txId: result.txHash,
-    contractAddress: String(contractAddress),
-    blockHeight: result.blockHeight,
-    verified: verifiedResult.result,
-  };
+    return {
+      txId: result.txHash,
+      contractAddress: String(contractAddress),
+      blockHeight: result.blockHeight,
+      verified: verifiedResult.result,
+    };
+  } finally {
+    // Best-effort cleanup — swallow errors so the outer flow always terminates.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const psp = providers.privateStateProvider as any;
+      if (typeof psp?.remove === "function") {
+        await psp.remove(privateStateId);
+      } else if (typeof psp?.clear === "function") {
+        await psp.clear();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /**
@@ -204,12 +225,12 @@ async function loadContractModule(assetsPath: string): Promise<{
     return import(pathToFileURL(esmPath).href);
   }
 
-  // Legacy 0.28.0 layout: managed/index.cjs, with ZK assets in managed/<name>/.
-  const legacyCjs = resolve(assetsPath, "..", "index.cjs");
+  // Legacy 0.28.0 layout: managed/index.cjs (assetsPath IS the managed/ dir).
+  const legacyCjs = resolve(assetsPath, "index.cjs");
   if (existsSync(legacyCjs)) {
     return import(pathToFileURL(legacyCjs).href);
   }
-  const legacyEsm = resolve(assetsPath, "..", "index.js");
+  const legacyEsm = resolve(assetsPath, "index.js");
   if (existsSync(legacyEsm)) {
     return import(pathToFileURL(legacyEsm).href);
   }
@@ -217,6 +238,6 @@ async function loadContractModule(assetsPath: string): Promise<{
   throw new Error(
     `No compiled contract module found under ${assetsPath}. Looked for:\n` +
       `  ${esmPath}\n  ${legacyCjs}\n  ${legacyEsm}\n` +
-      "Ensure the Compact contract has been compiled with: cd contract && compactc src/proofs.compact managed"
+      "Ensure the Compact contract has been compiled with: cd contract && pnpm run compact"
   );
 }
