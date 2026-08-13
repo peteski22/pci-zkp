@@ -2,6 +2,8 @@
 
 Layer 4: Zero-knowledge proofs via Midnight for Personal Context Infrastructure.
 
+This project is built on the Midnight Network.
+
 ## Overview
 
 PCI ZKP provides:
