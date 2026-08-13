@@ -1,9 +1,21 @@
+import { generateKeyPairSync, sign as signMessage } from "node:crypto";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ProofGenerator } from "../sdk/src/proofs/generator.js";
 import { AgeVerification } from "../sdk/src/proofs/age-verification.js";
 import type { Proof, OnChainProof } from "../sdk/src/types.js";
 import { isOnChainProof } from "../sdk/src/types.js";
 import * as client from "../sdk/src/midnight/client.js";
+
+// Test issuer: real Ed25519 keypair that signs credential hashes the way
+// a PCI credential issuer would.
+function createIssuer() {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const spki = publicKey.export({ type: "spki", format: "der" });
+  const publicKeyHex = spki.subarray(spki.length - 32).toString("hex");
+  const signCredential = (credentialHash: string): string =>
+    signMessage(null, Buffer.from(credentialHash, "utf8"), privateKey).toString("hex");
+  return { publicKeyHex, signCredential };
+}
 
 describe("ProofGenerator", () => {
   let generator: ProofGenerator;
@@ -47,11 +59,12 @@ describe("ProofGenerator", () => {
 
   describe("credential verification", () => {
     it("should generate proof for valid credential", async () => {
+      const issuer = createIssuer();
       const proof = await generator.generateCredentialProof({
         credentialHash: "hash123",
         expiryTimestamp: Math.floor(Date.now() / 1000) + 86400, // Tomorrow
-        issuerSignature: "sig123",
-        issuerPublicKey: "pk123",
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
         credentialType: "driver_license",
       });
 
@@ -61,15 +74,123 @@ describe("ProofGenerator", () => {
     });
 
     it("should generate proof for expired credential", async () => {
+      const issuer = createIssuer();
       const proof = await generator.generateCredentialProof({
         credentialHash: "hash123",
         expiryTimestamp: Math.floor(Date.now() / 1000) - 86400, // Yesterday
-        issuerSignature: "sig123",
-        issuerPublicKey: "pk123",
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
         credentialType: "driver_license",
       });
 
       expect(proof.publicSignals.valid).toBe(false);
+    });
+  });
+
+  describe("credential issuer signature verification", () => {
+    const expiry = () => Math.floor(Date.now() / 1000) + 86400;
+
+    it("should reject signature made by a different key", async () => {
+      const issuer = createIssuer();
+      const impostor = createIssuer();
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: impostor.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject signature over a different credential hash", async () => {
+      const issuer = createIssuer();
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: issuer.signCredential("other-hash"),
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject malformed signature", async () => {
+      const issuer = createIssuer();
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: "not-hex-at-all",
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject malformed public key", async () => {
+      const issuer = createIssuer();
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: "deadbeef", // Too short for an Ed25519 key
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+  });
+
+  describe("trusted issuer registry", () => {
+    const expiry = () => Math.floor(Date.now() / 1000) + 86400;
+
+    it("should accept issuer present in the trusted registry", async () => {
+      const issuer = createIssuer();
+      const trustingGenerator = new ProofGenerator({
+        trustedIssuers: [issuer.publicKeyHex.toUpperCase()],
+      });
+      const proof = await trustingGenerator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(true);
+    });
+
+    it("should reject issuer absent from the trusted registry", async () => {
+      const issuer = createIssuer();
+      const untrusted = createIssuer();
+      const trustingGenerator = new ProofGenerator({
+        trustedIssuers: [issuer.publicKeyHex],
+      });
+      const proof = await trustingGenerator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: untrusted.signCredential("hash123"),
+        issuerPublicKey: untrusted.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should accept any issuer with a valid signature when no registry is configured", async () => {
+      const issuer = createIssuer();
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(true);
     });
   });
 
@@ -85,11 +206,12 @@ describe("ProofGenerator", () => {
     });
 
     it("should verify credential proof", async () => {
+      const issuer = createIssuer();
       const proof = await generator.generateCredentialProof({
         credentialHash: "hash123",
         expiryTimestamp: Math.floor(Date.now() / 1000) + 86400,
-        issuerSignature: "sig123",
-        issuerPublicKey: "pk123",
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
         credentialType: "passport",
       });
 
@@ -98,11 +220,12 @@ describe("ProofGenerator", () => {
     });
 
     it("should reject expired credential proof", async () => {
+      const issuer = createIssuer();
       const proof = await generator.generateCredentialProof({
         credentialHash: "hash123",
         expiryTimestamp: Math.floor(Date.now() / 1000) - 86400, // Yesterday
-        issuerSignature: "sig123",
-        issuerPublicKey: "pk123",
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
         credentialType: "driver_license",
       });
 

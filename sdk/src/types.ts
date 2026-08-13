@@ -45,6 +45,12 @@ export interface ProofConfig {
   networkId?: string;
   /** Timeout for proof generation (ms) */
   timeoutMs?: number;
+  /**
+   * Trusted credential issuers: hex-encoded 32-byte Ed25519 public keys.
+   * When set, credentials from issuers not in this list are invalid.
+   * When omitted, any issuer with a valid signature is accepted.
+   */
+  trustedIssuers?: string[];
 }
 
 // Age Verification

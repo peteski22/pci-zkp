@@ -2,6 +2,7 @@
  * Credential Proof - Prove possession of valid credential
  */
 
+import { createPublicKey, verify as verifySignature } from "node:crypto";
 import type {
   Proof,
   ProofConfig,
@@ -10,16 +11,24 @@ import type {
 } from "../types.js";
 import { isOnChainProof } from "../types.js";
 
-export class CredentialProof {
-  constructor(private readonly _config: ProofConfig) {
-    // Config reserved for future Midnight SDK integration
-    void this._config;
+const ED25519_PUBLIC_KEY_BYTES = 32;
+const ED25519_SIGNATURE_BYTES = 64;
+
+function decodeHex(value: string, expectedBytes: number): Buffer | null {
+  if (!/^[0-9a-fA-F]+$/.test(value) || value.length !== expectedBytes * 2) {
+    return null;
   }
+  return Buffer.from(value, "hex");
+}
+
+export class CredentialProof {
+  constructor(private readonly config: ProofConfig) {}
 
   /**
    * Generate a credential verification proof
    *
-   * Proves: Has valid, unexpired credential of specified type
+   * Proves: Has valid, unexpired credential of specified type, signed by
+   * its issuer (Ed25519 signature over the credential hash)
    * Reveals: credential type, issuer public key, validity
    * Hides: credential hash, signature, specific details
    */
@@ -28,11 +37,10 @@ export class CredentialProof {
 
     // Check validity (this logic runs privately in the circuit)
     const notExpired = input.expiryTimestamp > currentTimestamp;
+    const validSignature = this.verifyIssuerSignature(input);
+    const trustedIssuer = this.isTrustedIssuer(input.issuerPublicKey);
 
-    // TODO: Verify issuer signature cryptographically
-    const validSignature = input.issuerSignature.length > 0;
-
-    const valid = notExpired && validSignature;
+    const valid = notExpired && validSignature && trustedIssuer;
 
     // TODO: Integrate with Midnight SDK for actual ZKP generation
     const proof: Proof = {
@@ -89,6 +97,42 @@ export class CredentialProof {
     }
 
     return true;
+  }
+
+  private verifyIssuerSignature(input: CredentialProofInput): boolean {
+    const publicKeyBytes = decodeHex(input.issuerPublicKey, ED25519_PUBLIC_KEY_BYTES);
+    const signatureBytes = decodeHex(input.issuerSignature, ED25519_SIGNATURE_BYTES);
+    if (publicKeyBytes === null || signatureBytes === null) {
+      return false;
+    }
+
+    try {
+      const issuerKey = createPublicKey({
+        key: {
+          kty: "OKP",
+          crv: "Ed25519",
+          x: publicKeyBytes.toString("base64url"),
+        },
+        format: "jwk",
+      });
+      return verifySignature(
+        null,
+        Buffer.from(input.credentialHash, "utf8"),
+        issuerKey,
+        signatureBytes
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private isTrustedIssuer(issuerPublicKey: string): boolean {
+    const registry = this.config.trustedIssuers;
+    if (registry === undefined) {
+      return true;
+    }
+    const normalized = issuerPublicKey.toLowerCase();
+    return registry.some((key) => key.toLowerCase() === normalized);
   }
 
   private generatePlaceholderProof(): string {
