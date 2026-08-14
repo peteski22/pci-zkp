@@ -3,15 +3,16 @@
  */
 
 import type { Proof, ProofConfig, AgeProofInput, CredentialProofInput } from "../types.js";
+import type { MidnightConfig } from "../midnight/client.js";
 import { AgeVerification } from "./age-verification.js";
 import { CredentialProof } from "./credential-proof.js";
 
 export class ProofGenerator {
-  private config: ProofConfig;
+  private config: ProofConfig & MidnightConfig;
   private ageVerification: AgeVerification;
   private credentialProof: CredentialProof;
 
-  constructor(config: ProofConfig = {}) {
+  constructor(config: ProofConfig & MidnightConfig = {}) {
     this.config = {
       timeoutMs: 30000,
       ...config,

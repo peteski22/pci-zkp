@@ -10,6 +10,7 @@ import type {
   CredentialProofOutput,
 } from "../types.js";
 import { isOnChainProof } from "../types.js";
+import type { MidnightConfig } from "../midnight/client.js";
 
 const ED25519_PUBLIC_KEY_BYTES = 32;
 const ED25519_SIGNATURE_BYTES = 64;
@@ -66,7 +67,7 @@ export class CredentialProof {
   /** Trusted issuer keys, canonicalized to lowercase hex. */
   private readonly trustedIssuers?: ReadonlySet<string>;
 
-  constructor(config: ProofConfig) {
+  constructor(private readonly config: ProofConfig & MidnightConfig) {
     this.trustedIssuers = normalizeTrustedIssuers(config.trustedIssuers);
   }
 
@@ -87,9 +88,18 @@ export class CredentialProof {
    *
    * The returned proof is a placeholder: its public signals are not
    * cryptographically bound to anything and MUST NOT be relied upon by a
-   * relying party until circuit integration lands.
+   * relying party until circuit integration lands. Generating one is
+   * therefore refused on mainnet.
    */
   async generate(input: CredentialProofInput): Promise<Proof> {
+    // Credential proofs have no Midnight circuit yet, so every proof is a
+    // placeholder. Those must never reach a production network.
+    if (this.config.network === "mainnet") {
+      throw new Error(
+        "Credential proofs are not yet available on Midnight. Placeholder proofs are disabled on mainnet for security."
+      );
+    }
+
     const currentTimestamp = Math.floor(Date.now() / 1000);
     const issuerPublicKeyBytes = decodeHex(input.issuerPublicKey, ED25519_PUBLIC_KEY_BYTES);
 
@@ -133,11 +143,18 @@ export class CredentialProof {
    * input, verified only when the proof is generated. An offline placeholder
    * proof is therefore self-attested — anyone can construct one whose signals
    * claim validity — and carries no guarantee for a relying party until
-   * circuit integration lands.
+   * circuit integration lands. Such proofs are trusted only on development
+   * and test networks, and always rejected on mainnet.
    */
   async verify(proof: Proof): Promise<boolean> {
     if (proof.circuitId !== "credential_proof") {
       throw new Error("Invalid circuit ID for credential proof");
+    }
+
+    // Placeholder proofs are self-attested, so they can never be trusted in
+    // a production environment.
+    if (this.config.network === "mainnet") {
+      return false;
     }
 
     if (!isCredentialProofOutput(proof.publicSignals)) {

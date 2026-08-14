@@ -2,6 +2,7 @@ import { generateKeyPairSync, sign as signMessage } from "node:crypto";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { ProofGenerator } from "../sdk/src/proofs/generator.js";
 import { AgeVerification } from "../sdk/src/proofs/age-verification.js";
+import { CredentialProof } from "../sdk/src/proofs/credential-proof.js";
 import type { Proof, OnChainProof } from "../sdk/src/types.js";
 import { isOnChainProof } from "../sdk/src/types.js";
 import * as client from "../sdk/src/midnight/client.js";
@@ -422,6 +423,40 @@ describe("ProofGenerator", () => {
       const isValid = await generator.verify(proof);
       expect(isValid).toBe(false);
     });
+  });
+});
+
+describe("CredentialProof - mainnet placeholder protection", () => {
+  const issuer = createIssuer();
+  const validInput = () => ({
+    credentialHash: "hash123",
+    expiryTimestamp: Math.floor(Date.now() / 1000) + 86400,
+    issuerSignature: issuer.signCredential("hash123"),
+    issuerPublicKey: issuer.publicKeyHex,
+    credentialType: "driver_license",
+  });
+
+  it("should refuse to generate placeholder credential proofs on mainnet", async () => {
+    const verifier = new CredentialProof({ network: "mainnet" });
+
+    await expect(verifier.generate(validInput())).rejects.toThrow(
+      "Placeholder proofs are disabled on mainnet"
+    );
+  });
+
+  it("should reject placeholder credential proofs on mainnet", async () => {
+    const proof = await new CredentialProof({}).generate(validInput());
+    expect(proof.publicSignals.valid).toBe(true);
+
+    const mainnetVerifier = new CredentialProof({ network: "mainnet" });
+    expect(await mainnetVerifier.verify(proof)).toBe(false);
+  });
+
+  it("should accept placeholder credential proofs on non-mainnet networks", async () => {
+    const verifier = new CredentialProof({ network: "preview" });
+
+    const proof = await verifier.generate(validInput());
+    expect(await verifier.verify(proof)).toBe(true);
   });
 });
 
