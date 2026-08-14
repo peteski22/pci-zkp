@@ -45,6 +45,16 @@ export interface ProofConfig {
   networkId?: string;
   /** Timeout for proof generation (ms) */
   timeoutMs?: number;
+  /**
+   * Trusted credential issuers: hex-encoded 32-byte Ed25519 public keys.
+   *
+   * Generation-time policy: credential proofs generated for issuers outside
+   * this list are marked invalid. It is not enforced when verifying a proof.
+   * An empty list therefore rejects every issuer; omitting the field accepts
+   * any issuer whose signature is valid. Malformed entries are rejected when
+   * the proof generator is constructed.
+   */
+  trustedIssuers?: string[];
 }
 
 // Age Verification
@@ -70,13 +80,17 @@ export interface AgeProofOutput {
 
 // Credential Proof
 export interface CredentialProofInput {
-  /** Credential hash (kept secret) */
+  /** Credential hash (kept secret); the signed message */
   credentialHash: string;
-  /** Credential expiry timestamp */
+  /** Credential expiry timestamp, in seconds since the epoch */
   expiryTimestamp: number;
-  /** Issuer's signature (kept secret) */
+  /**
+   * Issuer's signature (kept secret): a hex-encoded 64-byte Ed25519
+   * signature over the UTF-8 bytes of credentialHash. It covers only the
+   * hash — credentialType and expiryTimestamp are asserted by the caller.
+   */
   issuerSignature: string;
-  /** Issuer's public key */
+  /** Issuer's public key: a hex-encoded 32-byte Ed25519 public key */
   issuerPublicKey: string;
   /** Type of credential being proven */
   credentialType: string;
@@ -87,7 +101,7 @@ export interface CredentialProofOutput {
   valid: boolean;
   /** Credential type */
   credentialType: string;
-  /** Issuer public key */
+  /** Issuer public key, canonical lowercase hex */
   issuerPublicKey: string;
 }
 
