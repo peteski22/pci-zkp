@@ -7,11 +7,12 @@ import { isOnChainProof } from "../sdk/src/types.js";
 import * as client from "../sdk/src/midnight/client.js";
 
 // Test issuer: real Ed25519 keypair that signs credential hashes the way
-// a PCI credential issuer would.
+// a PCI credential issuer would. The key is exported as JWK to mirror the
+// import the implementation uses.
 function createIssuer() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
-  const spki = publicKey.export({ type: "spki", format: "der" });
-  const publicKeyHex = spki.subarray(spki.length - 32).toString("hex");
+  const { x } = publicKey.export({ format: "jwk" });
+  const publicKeyHex = Buffer.from(x as string, "base64url").toString("hex");
   const signCredential = (credentialHash: string): string =>
     signMessage(null, Buffer.from(credentialHash, "utf8"), privateKey).toString("hex");
   return { publicKeyHex, signCredential };
@@ -142,6 +143,109 @@ describe("ProofGenerator", () => {
 
       expect(proof.publicSignals.valid).toBe(false);
     });
+
+    it("should reject signature of the wrong length", async () => {
+      const issuer = createIssuer();
+      const truncated = issuer.signCredential("hash123").slice(0, 126);
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: truncated,
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject a well-formed key that is not a valid Ed25519 point", async () => {
+      const issuer = createIssuer();
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: "ff".repeat(32),
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should publish the issuer key in canonical lowercase hex", async () => {
+      const issuer = createIssuer();
+      const proof = await generator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex.toUpperCase(),
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(true);
+      expect(proof.publicSignals.issuerPublicKey).toBe(issuer.publicKeyHex.toLowerCase());
+    });
+  });
+
+  describe("credential input validation", () => {
+    const validInput = () => {
+      const issuer = createIssuer();
+      return {
+        credentialHash: "hash123",
+        expiryTimestamp: Math.floor(Date.now() / 1000) + 86400,
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      };
+    };
+
+    it("should reject a non-finite expiry timestamp", async () => {
+      const proof = await generator.generateCredentialProof({
+        ...validInput(),
+        expiryTimestamp: Number.NaN,
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject a non-integer expiry timestamp", async () => {
+      const proof = await generator.generateCredentialProof({
+        ...validInput(),
+        expiryTimestamp: "99999999999" as unknown as number,
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject an empty credential type", async () => {
+      const proof = await generator.generateCredentialProof({
+        ...validInput(),
+        credentialType: "",
+      });
+
+      // verify() rejects an empty credentialType, so generate() must not
+      // claim the credential is valid.
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject an empty credential hash", async () => {
+      const proof = await generator.generateCredentialProof({
+        ...validInput(),
+        credentialHash: "",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject missing fields without throwing", async () => {
+      // Input arrives from an HTTP layer, so fields may be absent entirely.
+      const proof = await generator.generateCredentialProof({
+        ...validInput(),
+        credentialType: undefined as unknown as string,
+        credentialHash: undefined as unknown as string,
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
   });
 
   describe("trusted issuer registry", () => {
@@ -191,6 +295,35 @@ describe("ProofGenerator", () => {
       });
 
       expect(proof.publicSignals.valid).toBe(true);
+    });
+
+    it("should reject every issuer when the registry is empty", async () => {
+      const issuer = createIssuer();
+      const trustingGenerator = new ProofGenerator({ trustedIssuers: [] });
+      const proof = await trustingGenerator.generateCredentialProof({
+        credentialHash: "hash123",
+        expiryTimestamp: expiry(),
+        issuerSignature: issuer.signCredential("hash123"),
+        issuerPublicKey: issuer.publicKeyHex,
+        credentialType: "driver_license",
+      });
+
+      expect(proof.publicSignals.valid).toBe(false);
+    });
+
+    it("should reject a malformed registry entry at construction", () => {
+      // A misconfigured allow-list must fail loudly, not silently reject
+      // every credential as though the issuer were untrusted.
+      expect(() => new ProofGenerator({ trustedIssuers: ["not-a-key"] })).toThrow(
+        /trusted issuer/i
+      );
+    });
+
+    it("should name the offending entry when the registry is malformed", () => {
+      const issuer = createIssuer();
+      expect(
+        () => new ProofGenerator({ trustedIssuers: [issuer.publicKeyHex, "0xdeadbeef"] })
+      ).toThrow(/index 1/i);
     });
   });
 
@@ -243,6 +376,24 @@ describe("ProofGenerator", () => {
         publicSignals: {
           valid: true,
           credentialType: "",
+          issuerPublicKey: createIssuer().publicKeyHex,
+        },
+        verificationKey: "test_vk",
+        circuitId: "credential_proof",
+        timestamp: new Date(),
+      };
+
+      const isValid = await generator.verify(proof);
+      expect(isValid).toBe(false);
+    });
+
+    it("should reject credential proof whose issuerPublicKey is not a 32-byte hex key", async () => {
+      const proof: Proof = {
+        verificationMethod: "offline",
+        proof: "dGVzdA==",
+        publicSignals: {
+          valid: true,
+          credentialType: "passport",
           issuerPublicKey: "pk123",
         },
         verificationKey: "test_vk",
