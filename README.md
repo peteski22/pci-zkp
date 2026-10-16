@@ -1,3 +1,5 @@
+> **Archived 2026-10-16.** This repository has moved to [peteski22/freehold](https://github.com/peteski22/freehold/tree/main/zkp). Open issues were transferred there and full history is preserved. This copy is read-only.
+
 # PCI ZKP
 
 Layer 4: Zero-knowledge proofs via Midnight for Personal Context Infrastructure.
